@@ -1,11 +1,12 @@
 [project]
 name = "ez-ptc"
-version = "0.1.0"
+version = "0.1.1"
 description = "Easy Programmatic Tool Calling — framework-agnostic multi-tool execution for any LLM"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = []
+authors = [{name = "Abhishek Satish"}]
 keywords = ["llm", "tools", "tool-calling", "agents", "programmatic", "sandbox"]
 classifiers = [
     "Development Status :: 3 - Alpha",

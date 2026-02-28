@@ -1,5 +1,9 @@
 # Concepts
 
+## Background
+
+Programmatic tool calling (PTC) is a pattern [introduced by Anthropic](https://www.anthropic.com/engineering/advanced-tool-use) in which an LLM writes executable code to orchestrate tool calls rather than invoking tools one at a time. This enables chaining, branching, and looping in a single round-trip. ez-ptc provides a framework-agnostic implementation of this pattern.
+
 ## Tools
 
 A **Tool** is a Python function wrapped with `@ez_tool`. It carries metadata extracted from the function's signature and docstring:

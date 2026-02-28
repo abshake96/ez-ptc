@@ -73,6 +73,7 @@ All tool-mode examples include `toolkit.tool_prompt()` in the system prompt. Thi
 | [`example_langchain.py`](../examples/example_langchain.py) | Tool | LangChain | OpenAI |
 | [`example_pydantic_ai.py`](../examples/example_pydantic_ai.py) | Tool | Pydantic AI | OpenAI |
 | [`example_google_genai.py`](../examples/example_google_genai.py) | Tool | Google GenAI | Gemini |
+| [`example_demo.py`](../examples/example_demo.py) | Both | None (simulated) | None |
 
 ## Prompt Mode (framework-free)
 
@@ -219,3 +220,9 @@ func_decl = FunctionDeclaration(
 )
 tools = [GenaiTool(function_declarations=[func_decl])]
 ```
+
+## Demo (no API keys needed)
+
+**File:** [`example_demo.py`](../examples/example_demo.py)
+
+A self-contained demo that shows both prompt mode and tool mode with simulated LLM responses. No API keys required — useful for understanding how ez-ptc works.

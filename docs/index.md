@@ -4,6 +4,8 @@
 
 ## What is ez-ptc?
 
+Programmatic tool calling (PTC) is a pattern [introduced by Anthropic](https://www.anthropic.com/engineering/advanced-tool-use) where an LLM writes code to call tools instead of invoking them one at a time. ez-ptc is a lightweight library that makes this pattern easy to use with any LLM provider.
+
 ez-ptc lets you define Python functions as tools and expose them to any LLM. Instead of registering one tool per function with your framework, you register a **single meta-tool** that accepts Python code. The LLM writes code that calls your tools, uses variables, loops, conditionals — and ez-ptc executes it in a sandboxed environment.
 
 This means the LLM can chain multiple tool calls, handle branching logic, and process results — all in a single round-trip.

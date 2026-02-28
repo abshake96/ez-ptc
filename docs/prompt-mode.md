@@ -172,3 +172,9 @@ if code:
 2. `` ``` ... ``` `` — Generic code blocks (fallback)
 
 Returns the first match, or `None` if no code block is found. Only the code inside the fence is returned (no backticks or language tag).
+
+## See also
+
+- [Tool Mode](tool-mode.md) — native framework integration
+- [Tool Chaining](tool-chaining.md) — document return types for reliable chaining
+- [Security & Sandboxing](security.md) — execution environment details

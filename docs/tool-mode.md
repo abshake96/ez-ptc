@@ -199,8 +199,6 @@ result = agent.run_sync("What's the weather in NYC?")
 print(result.output)
 ```
 
-See [Framework Examples](examples.md) for complete, runnable examples for all supported frameworks.
-
 ## Schema formats
 
 `toolkit.tool_schema()` supports two formats:
@@ -256,3 +254,10 @@ fn("print('hi')")  # "hi\n"
 The function accepts a `code` string, executes it with all toolkit tools available, and returns:
 - **On success:** captured stdout, or repr of last expression if no output
 - **On failure:** stderr/traceback for LLM self-correction
+
+## See also
+
+- [Framework Examples](examples.md) — complete, runnable examples for all supported frameworks
+- [Tool Chaining](tool-chaining.md) — document return types for reliable chaining
+- [Security & Sandboxing](security.md) — execution environment details
+- [API Reference](api-reference.md) — full API docs

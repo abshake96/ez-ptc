@@ -183,3 +183,9 @@ if weather["condition"] == "sunny":
 ```
 
 Without chaining hints, the LLM might guess `weather["temperature"]` or `product["cost"]` — leading to `KeyError` at runtime.
+
+## See also
+
+- [Getting Started](getting-started.md) — quick introduction to tool chaining
+- [API Reference](api-reference.md) — full API docs
+- [Framework Examples](examples.md) — see tool chaining in action

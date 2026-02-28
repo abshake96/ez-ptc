@@ -174,3 +174,8 @@ No special handling needed from the tool author.
 4. **Limit tool scope** — only expose tools that the LLM needs. Don't add tools with destructive side effects (deleting data, sending emails) without appropriate safeguards in the tool implementation.
 
 5. **Handle errors gracefully** — always check `result.success` before using `result.output`. The error output is designed to help the LLM self-correct on the next turn.
+
+## See also
+
+- [Concepts](concepts.md) — core architecture overview
+- [API Reference](api-reference.md) — full API docs for `execute()` and `ExecutionResult`
