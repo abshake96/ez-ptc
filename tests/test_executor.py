@@ -488,3 +488,28 @@ print(len(exceptions))
     result = execute_code(code, tools)
     assert result.success
     assert "9" in result.output
+
+
+# ── asyncio.run inside running event loop tests ──────────────────────
+
+
+def test_asyncio_run_inside_running_loop():
+    """asyncio.run() in LLM code should work even when called from within a running event loop."""
+    import asyncio
+
+    tools = _make_tools()
+    code = """
+async def main():
+    result = get_weather("NYC")
+    print(result["condition"])
+
+asyncio.run(main())
+"""
+
+    async def _run_from_async():
+        # Simulate being called from an async framework (e.g., Pydantic AI)
+        return execute_code(code, tools)
+
+    result = asyncio.run(_run_from_async())
+    assert result.success, f"Failed with: {result.error}"
+    assert "sunny" in result.output

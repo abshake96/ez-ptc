@@ -29,9 +29,17 @@ def _build_postamble(assist_tool_chaining: bool) -> str:
         "",
         "Write Python code in a ```python code block.",
         "",
-        "Chain results: store tool outputs in variables, pass them to subsequent calls or conditions.",
+    ]
+    if assist_tool_chaining:
+        lines.append(
+            "Chain results: store tool outputs in variables, pass them to subsequent calls or conditions."
+        )
+    else:
+        lines.append(
+            "Call the tools you need and print() all results."
+        )
+    lines += [
         "For parallel execution, use asyncio:",
-        "    import asyncio",
         "    async def main():",
         "        a, b = await asyncio.gather(asyncio.to_thread(tool1, ...), asyncio.to_thread(tool2, ...))",
         "        print(a, b)",
@@ -185,12 +193,16 @@ class Toolkit:
             parts.append(line)
         parts.append("")
 
-        parts.append(
-            "Chain results: store outputs in variables, pass them to subsequent calls or conditions."
-        )
         if self._assist_tool_chaining:
             parts.append(
+                "Chain results: store outputs in variables, pass them to subsequent calls or conditions."
+            )
+            parts.append(
                 "Each tool's return type is documented above — use these keys when accessing results."
+            )
+        else:
+            parts.append(
+                "Call the tools you need and print() all results."
             )
         parts.append("For parallel execution, use asyncio.gather with asyncio.to_thread.")
         parts.append(
@@ -222,12 +234,17 @@ class Toolkit:
             tool_docs.append(line)
         tools_listing = "\n\n".join(tool_docs)
 
+        if self._assist_tool_chaining:
+            usage_hint = "    Store results in variables to chain between function calls."
+        else:
+            usage_hint = "    Call the tools you need and print() all results."
+
         docstring = (
             f"Execute Python code by passing it in the `code` argument.\n"
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make separate calls.\n"
             f"Inside the code, the following functions are available:\n\n"
             f"{tools_listing}\n\n"
-            f"    Store results in variables, use conditions and loops.\n"
+            f"{usage_hint}\n"
             f"    ALWAYS print() the final result.\n\n"
             f"    Args:\n"
             f"        code: Python code to execute"
@@ -263,11 +280,16 @@ class Toolkit:
             tool_lines.append(line)
         tools_desc = "\n".join(tool_lines)
 
+        if self._assist_tool_chaining:
+            usage_hint = "Store results in variables to chain between function calls. print() the final result."
+        else:
+            usage_hint = "Call the tools you need and print() all results."
+
         description = (
             f"Execute Python code via the `code` argument. "
             f"Available functions inside the code:\n{tools_desc}\n\n"
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make multiple separate calls.\n"
-            f"Store results in variables to chain between function calls. print() the final result."
+            f"{usage_hint}"
         )
 
         code_desc = "Python code to execute. The listed functions are available as globals."

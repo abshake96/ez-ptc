@@ -311,8 +311,24 @@ def execute_code(
             tb = traceback.format_exc()
             stderr_capture.write(tb)
 
-    # Use signal-based timeout on Unix, threading on other platforms
-    if hasattr(signal, "SIGALRM") and threading.current_thread() is threading.main_thread():
+    # Detect if there's already a running event loop (e.g., inside an async framework
+    # like Pydantic AI). If so, we must use thread-based execution so LLM code that
+    # calls asyncio.run() gets a clean thread with no existing loop.
+    def _has_running_loop() -> bool:
+        try:
+            asyncio.get_running_loop()
+            return True
+        except RuntimeError:
+            return False
+
+    # Use signal-based timeout on Unix when safe, threading otherwise
+    _use_signal = (
+        hasattr(signal, "SIGALRM")
+        and threading.current_thread() is threading.main_thread()
+        and not _has_running_loop()
+    )
+
+    if _use_signal:
         original_handler = signal.getsignal(signal.SIGALRM)
 
         def _timeout_handler(signum: int, frame: Any) -> None:

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.2] - 2026-02-28
+
+### Fixed
+
+- Chaining language no longer appears in prompts when `assist_tool_chaining=False` — all four prompt surfaces (`prompt()`, `tool_prompt()`, `as_tool()`, `tool_schema()`) now correctly show neutral "print all results" language when chaining is disabled
+- `asyncio.run()` in LLM-generated code now works when the executor is called from within a running event loop (e.g., Pydantic AI, FastAPI) — executor detects the loop and falls back to thread-based execution
+
 ## [0.1.0] - 2026-02-28
 
 ### Added
