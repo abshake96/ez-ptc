@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.3] - 2026-02-28
+
+### Added
+
+- When `assist_tool_chaining=False`, all prompt surfaces now include a caution telling the LLM not to assume return value structure or key names — prevents hallucinated key access on tool outputs
+
 ## [0.1.2] - 2026-02-28
 
 ### Fixed

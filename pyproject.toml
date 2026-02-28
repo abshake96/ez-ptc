@@ -1,6 +1,6 @@
 [project]
 name = "ez-ptc"
-version = "0.1.2"
+version = "0.1.3"
 description = "Easy Programmatic Tool Calling — framework-agnostic multi-tool execution for any LLM"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -503,38 +503,46 @@ class TestChainingLanguageConditional:
         prompt = tk.prompt()
         assert "Chain results" not in prompt
         assert "print()" in prompt
+        assert "Do NOT assume" in prompt
 
     def test_postamble_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         prompt = tk.prompt()
         assert "Chain results" in prompt
+        assert "Do NOT assume" not in prompt
 
     def test_tool_prompt_no_chain_when_disabled(self):
         tk = _make_toolkit(assist_tool_chaining=False)
         tp = tk.tool_prompt()
         assert "Chain results" not in tp
+        assert "Do NOT assume" in tp
 
     def test_tool_prompt_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         tp = tk.tool_prompt()
         assert "Chain results" in tp
+        assert "Do NOT assume" not in tp
 
     def test_as_tool_no_chain_when_disabled(self):
         tk = _make_toolkit(assist_tool_chaining=False)
         doc = tk.as_tool().__doc__
         assert "chain between" not in doc.lower()
+        assert "Do NOT assume" in doc
 
     def test_as_tool_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         doc = tk.as_tool().__doc__
         assert "chain between" in doc.lower()
+        assert "Do NOT assume" not in doc
 
     def test_tool_schema_no_chain_when_disabled(self):
         tk = _make_toolkit(assist_tool_chaining=False)
         desc = tk.tool_schema()["function"]["description"]
         assert "chain between" not in desc.lower()
+        assert "Do NOT assume" in desc
 
     def test_tool_schema_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         desc = tk.tool_schema()["function"]["description"]
         assert "chain between" in desc.lower()
+        assert "Do NOT assume" not in desc

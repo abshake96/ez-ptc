@@ -38,6 +38,9 @@ def _build_postamble(assist_tool_chaining: bool) -> str:
         lines.append(
             "Call the tools you need and print() all results."
         )
+        lines.append(
+            "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys."
+        )
     lines += [
         "For parallel execution, use asyncio:",
         "    async def main():",
@@ -204,6 +207,9 @@ class Toolkit:
             parts.append(
                 "Call the tools you need and print() all results."
             )
+            parts.append(
+                "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys."
+            )
         parts.append("For parallel execution, use asyncio.gather with asyncio.to_thread.")
         parts.append(
             "json, math, re, asyncio are pre-imported. You can also import other safe stdlib modules "
@@ -237,7 +243,10 @@ class Toolkit:
         if self._assist_tool_chaining:
             usage_hint = "    Store results in variables to chain between function calls."
         else:
-            usage_hint = "    Call the tools you need and print() all results."
+            usage_hint = (
+                "    Call the tools you need and print() all results.\n"
+                "    CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly."
+            )
 
         docstring = (
             f"Execute Python code by passing it in the `code` argument.\n"
@@ -283,7 +292,10 @@ class Toolkit:
         if self._assist_tool_chaining:
             usage_hint = "Store results in variables to chain between function calls. print() the final result."
         else:
-            usage_hint = "Call the tools you need and print() all results."
+            usage_hint = (
+                "Call the tools you need and print() all results.\n"
+                "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly."
+            )
 
         description = (
             f"Execute Python code via the `code` argument. "
