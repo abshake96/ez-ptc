@@ -546,3 +546,30 @@ class TestChainingLanguageConditional:
         desc = tk.tool_schema()["function"]["description"]
         assert "chain between" in desc.lower()
         assert "Do NOT assume" not in desc
+
+
+# ── Do-not-import-tools tests ────────────────────────────────────────
+
+
+class TestDoNotImportTools:
+    """All surfaces should tell the LLM not to import the available tools."""
+
+    def test_prompt_mentions_no_import(self):
+        tk = _make_toolkit()
+        prompt = tk.prompt()
+        assert "do NOT import" in prompt
+
+    def test_tool_prompt_mentions_no_import(self):
+        tk = _make_toolkit()
+        tp = tk.tool_prompt()
+        assert "do NOT import" in tp
+
+    def test_as_tool_mentions_no_import(self):
+        tk = _make_toolkit()
+        doc = tk.as_tool().__doc__
+        assert "do NOT import" in doc
+
+    def test_tool_schema_mentions_no_import(self):
+        tk = _make_toolkit()
+        desc = tk.tool_schema()["function"]["description"]
+        assert "do NOT import" in desc

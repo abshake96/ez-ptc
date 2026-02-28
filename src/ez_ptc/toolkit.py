@@ -13,7 +13,7 @@ from .tool import Tool
 
 def _build_preamble(assist_tool_chaining: bool) -> str:
     """Build the default preamble based on configuration."""
-    text = "You have access to the following tools via Python function calls."
+    text = "You have access to the following tools via Python function calls. They are already available — do NOT import them."
     if assist_tool_chaining:
         text += (
             "\nEach tool's return type is documented with a # Returns: comment "
@@ -36,7 +36,7 @@ def _build_postamble(assist_tool_chaining: bool) -> str:
         )
     else:
         lines.append(
-            "Call the tools you need and print() all results."
+            "Call all the tools you need and print() all results in a single code block.\n"
         )
         lines.append(
             "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys."
@@ -188,7 +188,7 @@ class Toolkit:
             "Pass Python code in its `code` argument.\n"
             "IMPORTANT: Always combine ALL operations into a SINGLE execute_tools call "
             "— do NOT make multiple separate calls. Write one code block that handles everything.\n"
-            "Inside the code, the following functions are available:",
+            "Inside the code, the following functions are already available — do NOT import them:",
             "",
         ]
 
@@ -205,7 +205,7 @@ class Toolkit:
             )
         else:
             parts.append(
-                "Call the tools you need and print() all results."
+                "Call all the tools you need and print() all results in a single code block.\n"
             )
             parts.append(
                 "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys."
@@ -244,14 +244,14 @@ class Toolkit:
             usage_hint = "    Store results in variables to chain between function calls."
         else:
             usage_hint = (
-                "    Call the tools you need and print() all results.\n"
+                "    Call all the tools you need and print() all results in a single code block.\n"
                 "    CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly."
             )
 
         docstring = (
             f"Execute Python code by passing it in the `code` argument.\n"
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make separate calls.\n"
-            f"Inside the code, the following functions are available:\n\n"
+            f"Inside the code, the following functions are already available — do NOT import them:\n\n"
             f"{tools_listing}\n\n"
             f"{usage_hint}\n"
             f"    ALWAYS print() the final result.\n\n"
@@ -293,13 +293,13 @@ class Toolkit:
             usage_hint = "Store results in variables to chain between function calls. print() the final result."
         else:
             usage_hint = (
-                "Call the tools you need and print() all results.\n"
+                "Call all the tools you need and print() all results in a single code block.\n"
                 "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly."
             )
 
         description = (
             f"Execute Python code via the `code` argument. "
-            f"Available functions inside the code:\n{tools_desc}\n\n"
+            f"Available functions inside the code (already available — do NOT import them):\n{tools_desc}\n\n"
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make multiple separate calls.\n"
             f"{usage_hint}"
         )

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.4] - 2026-03-01
+
+### Added
+
+- All prompt surfaces now explicitly tell the LLM that tools are pre-loaded globals and must NOT be imported — prevents `import search_cars` failures
+- Refined no-chaining usage hints to reinforce single code block usage
+
 ## [0.1.3] - 2026-02-28
 
 ### Added
