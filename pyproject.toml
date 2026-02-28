@@ -1,0 +1,50 @@
+[project]
+name = "ez-ptc"
+version = "0.1.0"
+description = "Easy Programmatic Tool Calling — framework-agnostic multi-tool execution for any LLM"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = []
+keywords = ["llm", "tools", "tool-calling", "agents", "programmatic", "sandbox"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/abhisheksatish/ez-ptc"
+Documentation = "https://github.com/abhisheksatish/ez-ptc/tree/main/docs"
+Repository = "https://github.com/abhisheksatish/ez-ptc"
+Issues = "https://github.com/abhisheksatish/ez-ptc/issues"
+
+[project.optional-dependencies]
+pydantic = ["pydantic>=2.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ez_ptc"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "langchain-core>=1.2.16",
+    "langchain-openai>=1.1.10",
+    "litellm>=1.81.16",
+    "openai>=2.24.0",
+    "pydantic-ai>=1.63.0",
+    "python-dotenv>=1.2.1",
+]
