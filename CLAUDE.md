@@ -10,14 +10,15 @@
 - **MCP Tool Bridge**: `mcp.py` wraps MCP server tools/resources as ez-ptc `Tool` objects. `Toolkit.from_mcp(session)` for one-liner setup. `get_mcp_prompt()` / `list_mcp_prompts()` for prompt templates. Lazy import keeps core zero-dep. Optional extra: `ez-ptc[mcp]`
 
 ## Testing
-- `uv run pytest tests/ -v` — 194+ tests, runs in ~10s
+- `uv run pytest tests/ -v` — 245 tests, runs in ~10s
 - When changing prompt text, add assertions for both presence (when enabled) AND absence (when disabled)
 - Executor tests: `test_executor.py`, Toolkit/prompt tests: `test_toolkit.py`, Schema tests: `test_schema.py`, Sandbox tests: `test_sandbox.py`, Validator tests: `test_validator.py`
 - Async tests use `pytest-asyncio` with `asyncio_mode = "auto"` in pyproject.toml
 
 ## Release Workflow
 - Bump version in `pyproject.toml` → update `CHANGELOG.md` → commit → `git push origin main` (needs SSH passphrase, user does manually) → `uv build` → `uv publish dist/ez_ptc-{version}*`
-- SSH push always fails in CLI — just build the wheel and tell the user to push + publish
+- `git push origin main` or `gh` CLI usually works; SSH passphrase may block in some sessions — fall back to telling user to push manually if needed
+- PyPI publish needs `UV_PUBLISH_TOKEN` or `--token` flag
 
 ## Common LLM Failure Modes (inform prompt engineering)
 - LLMs try to `import` tools that are pre-loaded globals — all surfaces must say "do NOT import"

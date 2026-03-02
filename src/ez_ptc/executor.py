@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import builtins
+import inspect
 import io
 import json
 import signal
@@ -74,7 +75,7 @@ def _make_tool_wrapper(
         result = tool.fn(*args, **kwargs)
 
         # Handle async tools
-        if asyncio.iscoroutine(result):
+        if inspect.isawaitable(result):
             if loop is not None and loop.is_running():
                 # Efficient path: dispatch to the main event loop
                 future = asyncio.run_coroutine_threadsafe(result, loop)
@@ -199,7 +200,7 @@ _SAFE_MODULES = {
     "asyncio", "json", "math", "re", "datetime", "time", "calendar",
     "collections", "itertools", "functools", "operator", "bisect", "heapq",
     "typing", "types", "dataclasses", "enum", "abc",
-    "string", "textwrap", "pprint", "copy", "io",
+    "string", "textwrap", "pprint", "copy",
     "random", "statistics", "decimal", "fractions",
     "base64", "hashlib", "uuid",
     "urllib.parse", "concurrent.futures",
@@ -224,8 +225,20 @@ def _safe_import(
     if name in _SAFE_MODULES:
         return builtins.__import__(name, globals, locals, fromlist, level)
 
-    # Allow parent packages of allowed submodules (e.g. "urllib" when "urllib.parse" is allowed)
+    # Allow parent packages of allowed submodules, but only when fromlist
+    # resolves to an allowed full module path (e.g. "urllib" + fromlist=("parse",)
+    # is OK because "urllib.parse" is in _SAFE_MODULES, but fromlist=("request",)
+    # is blocked because "urllib.request" is not).
     if name in _SAFE_PARENT_PACKAGES:
+        if fromlist:
+            for item in fromlist:
+                full = f"{name}.{item}"
+                if full not in _SAFE_MODULES:
+                    raise ImportError(
+                        f"Import of '{full}' is not allowed. "
+                        f"Only these submodules of '{name}' are allowed: "
+                        + ", ".join(m for m in sorted(_SAFE_MODULES) if m.startswith(name + "."))
+                    )
         return builtins.__import__(name, globals, locals, fromlist, level)
 
     available = sorted(_SAFE_MODULES)
@@ -344,7 +357,8 @@ def execute_code(
 
         try:
             signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(max(1, int(timeout)))
+            import math as _math_
+            signal.alarm(max(1, _math_.ceil(timeout)))
             _run()
         finally:
             signal.alarm(0)

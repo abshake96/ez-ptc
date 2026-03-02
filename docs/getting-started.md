@@ -12,6 +12,10 @@ pip install ez-ptc
 # For MCP server integration
 uv add "ez-ptc[mcp]"
 # or: pip install "ez-ptc[mcp]"
+
+# For Pydantic model return type schemas
+uv add "ez-ptc[pydantic]"
+# or: pip install "ez-ptc[pydantic]"
 ```
 
 ## Define your first tools
@@ -91,7 +95,7 @@ response = client.chat.completions.create(
 code = toolkit.extract_code(response.choices[0].message.content)
 
 # 4. Execute safely
-result = toolkit.execute(code)
+result = toolkit.execute_sync(code)
 print(result.output)       # Captured stdout
 print(result.tool_calls)   # Log of which tools were called
 ```
@@ -104,7 +108,7 @@ Register a single meta-tool with your framework. The LLM calls it natively.
 
 ```python
 # Get a callable function and its schema
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()  # or toolkit.as_tool() for async
 tool_schema = toolkit.tool_schema(format="openai")  # or "anthropic"
 
 # Register with your framework and let the agentic loop handle it

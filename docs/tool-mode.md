@@ -24,7 +24,7 @@ def get_weather(location: str) -> dict:
 toolkit = Toolkit([get_weather])
 
 # A callable function: execute_tools(code: str) -> str
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 # JSON schema for framework registration
 schema = toolkit.tool_schema(format="openai")   # or "anthropic"
@@ -58,7 +58,8 @@ The tool's description includes all available sub-tools, so the LLM knows what f
 When the LLM calls the meta-tool, pass the code to `execute_fn`:
 
 ```python
-result = execute_fn(code_from_llm)
+result = execute_fn(code_from_llm)  # sync version
+# Or: result = await execute_fn(code_from_llm)  # async version from as_tool()
 # Returns: stdout on success, stderr/traceback on failure
 ```
 
@@ -73,7 +74,7 @@ from openai import OpenAI
 
 client = OpenAI()
 tool_schema = toolkit.tool_schema(format="openai")
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 messages = [
     # tool_prompt() reinforces single-call behavior for models with parallel tool calling
@@ -112,7 +113,7 @@ import anthropic
 
 client = anthropic.Anthropic()
 tool_schema = toolkit.tool_schema(format="anthropic")
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 messages = [{"role": "user", "content": "What's the weather in NYC?"}]
 
@@ -152,7 +153,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool as langchain_tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 @langchain_tool
 def execute_tools(code: str) -> str:
@@ -185,7 +186,7 @@ Pydantic AI manages tool calls sequentially, so models typically consolidate wel
 ```python
 from pydantic_ai import Agent, Tool as PydanticTool
 
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 agent = Agent(
     "openai:gpt-4.1-mini",
@@ -243,7 +244,7 @@ schema = toolkit.tool_schema(format="anthropic")
 `toolkit.as_tool()` returns a function with proper metadata for framework introspection:
 
 ```python
-fn = toolkit.as_tool()
+fn = toolkit.as_tool_sync()  # sync version; or as_tool() for async
 
 fn.__name__        # "execute_tools"
 fn.__doc__         # Docstring listing all sub-tools

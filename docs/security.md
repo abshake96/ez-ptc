@@ -70,7 +70,7 @@ The following safe stdlib modules can be imported with `import` statements:
 `string`, `textwrap`, `pprint`
 
 **Utilities:**
-`copy`, `io`, `base64`, `hashlib`, `uuid`
+`copy`, `base64`, `hashlib`, `uuid`
 
 **Async:**
 `asyncio`, `concurrent.futures`
@@ -111,12 +111,34 @@ asyncio.run(main())
 
 `asyncio` is pre-imported, so the `import asyncio` line is optional.
 
+## AST pre-flight validation
+
+Before execution, `validate_code()` performs lightweight AST checks to catch common LLM mistakes early:
+
+- **Tool imports** — errors if the LLM tries to `import` a tool that is already a global function
+- **Dangerous attributes** — errors on access to `__import__`, `__builtins__`, `__globals__`, `__code__`, `__subclasses__`, etc.
+- **Unknown calls** — warns about calls to functions not in tools, builtins, or locally defined names
+- **Infinite loops** — warns about `while True` without `break` or `return`
+- **Excessive resources** — warns about large exponents or multiplications (e.g., `10 ** 10_000_000`)
+
+Validation is defense-in-depth (not a security boundary). The `execute()` and `execute_sync()` methods run validation automatically by default. You can also call `validate_code()` directly:
+
+```python
+from ez_ptc import validate_code
+
+result = validate_code(code, tool_names={"get_weather", "search_products"})
+if not result.is_safe:
+    print("Errors:", result.errors)
+print("Warnings:", result.warnings)
+```
+
 ## Timeout protection
 
 Code execution has a configurable timeout (default 30 seconds):
 
 ```python
-result = toolkit.execute(code, timeout=10.0)  # 10 second timeout
+result = toolkit.execute_sync(code, timeout=10.0)  # 10 second timeout
+# Or: result = await toolkit.execute(code, timeout=10.0)  # async version
 ```
 
 Implementation:

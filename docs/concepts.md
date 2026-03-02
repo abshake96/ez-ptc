@@ -80,6 +80,8 @@ toolkit = Toolkit(
     preamble="...",              # Optional: custom intro text
     postamble="...",             # Optional: custom instruction text
     assist_tool_chaining=False,  # Optional: enable return schema hints
+    timeout=30.0,               # Optional: execution timeout in seconds
+    sandbox=None,               # Optional: custom SandboxBackend
 )
 ```
 
@@ -108,12 +110,17 @@ When the LLM writes code (in either mode), ez-ptc executes it in a **sandboxed e
 - Tools are injected as global functions
 - Only safe builtins are available (no file I/O, no networking, no shell access)
 - Safe stdlib modules can be imported: `math`, `datetime`, `collections`, `itertools`, `re`, and others
+- AST pre-flight validation catches dangerous patterns before execution (`validate_code()`)
 - A configurable timeout prevents runaway execution
 - stdout/stderr are captured
 - Every tool call is logged with arguments and return values
 
 ```python
-result = toolkit.execute(code)
+# Async (default)
+result = await toolkit.execute(code)
+
+# Sync convenience
+result = toolkit.execute_sync(code)
 
 result.output       # str: captured stdout (print output)
 result.error_output # str: captured stderr/traceback
@@ -122,6 +129,8 @@ result.tool_calls   # list[dict]: log of tool calls
 result.success      # bool: whether execution succeeded
 result.error        # str | None: error message if failed
 ```
+
+You can also plug in a custom sandbox backend via `Toolkit(sandbox=my_sandbox)`. See `SandboxBackend` and `LocalSandbox` in the [API Reference](api-reference.md).
 
 See [Security & Sandboxing](security.md) for details on what's allowed and blocked.
 

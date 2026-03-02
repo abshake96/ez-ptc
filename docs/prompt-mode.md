@@ -30,10 +30,10 @@ toolkit = Toolkit([get_weather])
 prompt = toolkit.prompt()
 ```
 
-This generates:
+This generates (with default `assist_tool_chaining=False`):
 
 ```
-You have access to the following tools via Python function calls.
+You have access to the following tools via Python function calls. They are already available — do NOT import them.
 
 Available tools:
 
@@ -49,9 +49,10 @@ IMPORTANT: Combine ALL operations into a single code block.
 
 Write Python code in a ```python code block.
 
-Chain results: store tool outputs in variables, pass them to subsequent calls or conditions.
+Call all the tools you need and print() all results in a single code block.
+
+CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys.
 For parallel execution, use asyncio:
-    import asyncio
     async def main():
         a, b = await asyncio.gather(asyncio.to_thread(tool1, ...), asyncio.to_thread(tool2, ...))
         print(a, b)
@@ -98,7 +99,7 @@ print(f"Weather in SF: {weather['condition']}, {weather['temp']}°C")
 ```python
 code = toolkit.extract_code(llm_text)
 if code:
-    result = toolkit.execute(code)
+    result = toolkit.execute_sync(code)
     print(result.output)       # "Weather in SF: sunny, 22°C"
     print(result.tool_calls)   # [{"name": "get_weather", "args": (...), ...}]
 ```
@@ -157,7 +158,7 @@ response = client.chat.completions.create(
 # 3. Extract and execute
 code = toolkit.extract_code(response.choices[0].message.content)
 if code:
-    result = toolkit.execute(code)
+    result = toolkit.execute_sync(code)
     if result.success:
         print(result.output)
     else:

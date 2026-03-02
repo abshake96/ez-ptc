@@ -40,7 +40,7 @@ RETURN_SCHEMAS = {
         "type": "string",
         "description": "Newline-separated entries like '[FILE] name' or '[DIR] name'",
     },
-    "read_file": {
+    "read_text_file": {
         "type": "string",
         "description": "Full text content of the file",
     },
@@ -83,13 +83,13 @@ async def main():
 
         toolkit_basic = await Toolkit.from_mcp(
             session,
-            tool_names=["list_directory", "read_file", "get_file_info"],
+            tool_names=["list_directory", "read_text_file", "get_file_info"],
             include_resources=False,
             assist_tool_chaining=False,
         )
         toolkit_chained = await Toolkit.from_mcp(
             session,
-            tool_names=["list_directory", "read_file", "get_file_info"],
+            tool_names=["list_directory", "read_text_file", "get_file_info"],
             include_resources=False,
             assist_tool_chaining=True,
             return_schemas=RETURN_SCHEMAS,

@@ -11,6 +11,7 @@ Usage:
 
 Requires:
     OPENAI_API_KEY in .env or environment
+    pip install openai python-dotenv
 """
 
 import json

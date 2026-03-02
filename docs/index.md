@@ -63,4 +63,5 @@ With `assist_tool_chaining=True`, the LLM sees return type hints like `# Returns
 
 - Python 3.11+
 - No required LLM provider dependencies — bring your own client
-- Optional: `pip install ez-ptc[mcp]` for [MCP Tool Bridge](mcp-bridge.md) support
+- Optional: `pip install "ez-ptc[mcp]"` for [MCP Tool Bridge](mcp-bridge.md) support
+- Optional: `pip install "ez-ptc[pydantic]"` for Pydantic `BaseModel` return type schemas

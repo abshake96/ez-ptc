@@ -249,9 +249,27 @@ def _check_infinite_loops(tree: ast.Module, result: ValidationResult) -> None:
 
 
 def _body_has_exit(body: list[ast.stmt]) -> bool:
-    """Check if a list of statements contains a break or return (at any depth)."""
-    for node in ast.walk(ast.Module(body=body, type_ignores=[])):
-        if isinstance(node, (ast.Break, ast.Return)):
+    """Check if a list of statements contains a break or return.
+
+    Skips nested function/class definitions — a ``return`` inside a nested
+    function does not exit the enclosing loop.
+    """
+    for stmt in body:
+        if isinstance(stmt, (ast.Break, ast.Return)):
+            return True
+        # Skip nested functions/classes — return/break inside them doesn't exit our loop
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        # Recurse into compound statement bodies (If, For, While, Try, With, etc.)
+        if hasattr(stmt, "body") and _body_has_exit(stmt.body):
+            return True
+        if hasattr(stmt, "orelse") and _body_has_exit(stmt.orelse):
+            return True
+        if hasattr(stmt, "handlers"):  # try/except
+            for handler in stmt.handlers:
+                if _body_has_exit(handler.body):
+                    return True
+        if hasattr(stmt, "finalbody") and _body_has_exit(stmt.finalbody):
             return True
     return False
 

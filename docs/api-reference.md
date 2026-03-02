@@ -83,19 +83,23 @@ Toolkit(
     preamble: str | None = None,
     postamble: str | None = None,
     assist_tool_chaining: bool = False,
+    timeout: float = 30.0,
+    sandbox: SandboxBackend | None = None,
 )
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `tools` | `list[Tool]` | required | List of tools to include |
+| `tools` | `list[Tool]` | required | List of tools to include. Duplicate names raise `ValueError`. |
 | `preamble` | `str \| None` | `None` | Custom intro text for `prompt()`. Uses default if `None`. |
 | `postamble` | `str \| None` | `None` | Custom instruction text for `prompt()`. Uses default if `None`. |
 | `assist_tool_chaining` | `bool` | `False` | When `True`, appends return schema info to tool listings |
+| `timeout` | `float` | `30.0` | Default execution timeout in seconds |
+| `sandbox` | `SandboxBackend \| None` | `None` | Custom sandbox backend. Uses `LocalSandbox` if `None`. |
 
 ### Class Methods
 
-#### `await Toolkit.from_mcp(session, *, tool_names=None, include_resources=True, extra_tools=None, **kwargs) -> Toolkit`
+#### `await Toolkit.from_mcp(session, *, tool_names=None, include_resources=True, extra_tools=None, return_schemas=None, **kwargs) -> Toolkit`
 
 Create a Toolkit from an MCP server session. Discovers tools and resources, wraps them as `Tool` objects. Requires `pip install ez-ptc[mcp]`.
 
@@ -105,6 +109,7 @@ Create a Toolkit from an MCP server session. Discovers tools and resources, wrap
 | `tool_names` | `list[str] \| None` | `None` | Only include tools whose names match this list |
 | `include_resources` | `bool` | `True` | Whether to wrap resources/templates as tools |
 | `extra_tools` | `list[Tool] \| None` | `None` | Additional local `Tool` objects to include |
+| `return_schemas` | `dict[str, dict] \| None` | `None` | Map of tool name → JSON schema for return types. Applied to matching MCP tools for `assist_tool_chaining`. |
 | `**kwargs` | | | Passed to `Toolkit.__init__` (preamble, postamble, etc.) |
 
 ```python
@@ -142,22 +147,31 @@ Searches for `` ```python ... ``` `` blocks first, then generic `` ``` ... ``` `
 code = toolkit.extract_code(llm_response_text)
 ```
 
-#### `execute(code: str, timeout: float = 30.0) -> ExecutionResult`
+#### `await execute(code: str, timeout: float | None = None, validate: bool = True) -> ExecutionResult`
 
-Execute LLM-generated Python code with tools available in a sandboxed environment.
+Execute LLM-generated Python code with tools available in a sandboxed environment. This is an async method.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `code` | `str` | required | Python code to execute |
-| `timeout` | `float` | `30.0` | Maximum execution time in seconds |
+| `timeout` | `float \| None` | `None` | Maximum execution time in seconds. Uses the toolkit's default if `None`. |
+| `validate` | `bool` | `True` | Run AST pre-flight validation before execution |
 
 ```python
-result = toolkit.execute('print(get_weather("NYC"))')
+result = await toolkit.execute('print(get_weather("NYC"))')
 ```
 
-#### `as_tool() -> Callable[[str], str]`
+#### `execute_sync(code: str, timeout: float | None = None, validate: bool = True) -> ExecutionResult`
 
-Return a callable function that any framework can register as a tool.
+Sync convenience wrapper around `execute()`. Same parameters.
+
+```python
+result = toolkit.execute_sync('print(get_weather("NYC"))')
+```
+
+#### `as_tool() -> Callable[[str], Awaitable[str]]`
+
+Return an async callable function that any framework can register as a tool.
 
 The returned function:
 - Accepts `code: str` — Python code to execute
@@ -167,6 +181,15 @@ The returned function:
 
 ```python
 execute_fn = toolkit.as_tool()
+output = await execute_fn('print("hello")')  # "hello\n"
+```
+
+#### `as_tool_sync() -> Callable[[str], str]`
+
+Return a sync callable function. Same behavior as `as_tool()` but synchronous.
+
+```python
+execute_fn = toolkit.as_tool_sync()
 output = execute_fn('print("hello")')  # "hello\n"
 ```
 
@@ -276,9 +299,90 @@ Extract a complete schema from a Python function. Lower-level utility used inter
 
 ---
 
+## `SandboxBackend`
+
+```python
+from ez_ptc import SandboxBackend
+```
+
+A `Protocol` class defining the interface for sandbox backends. Any class with an `async execute(code, tools, timeout)` method satisfies this protocol.
+
+### Methods
+
+#### `async execute(code: str, tools: dict[str, Tool], timeout: float) -> ExecutionResult`
+
+Execute code in the sandbox.
+
+---
+
+## `LocalSandbox`
+
+```python
+from ez_ptc import LocalSandbox
+```
+
+Default sandbox backend. Uses the built-in restricted `exec()` engine with `asyncio.to_thread` for non-blocking execution.
+
+```python
+from ez_ptc import Toolkit, LocalSandbox
+
+# Explicit (equivalent to default behavior)
+toolkit = Toolkit(tools, sandbox=LocalSandbox())
+```
+
+---
+
+## `validate_code`
+
+```python
+from ez_ptc import validate_code
+```
+
+```python
+validate_code(code: str, tool_names: set[str]) -> ValidationResult
+```
+
+Run AST pre-flight validation on LLM-generated code. Returns a `ValidationResult` with any warnings and errors.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `code` | `str` | Python source code to validate |
+| `tool_names` | `set[str]` | Names of tools available in the sandbox |
+
+```python
+result = validate_code(code, {"get_weather", "search_products"})
+if not result.is_safe:
+    print(result.errors)
+```
+
+---
+
+## `ValidationResult`
+
+```python
+from ez_ptc import ValidationResult
+```
+
+Result of static code validation.
+
+### Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `warnings` | `list[str]` | Non-blocking issues (code still executes) |
+| `errors` | `list[str]` | Blocking issues (code will NOT execute) |
+
+### Properties
+
+#### `is_safe -> bool`
+
+`True` when there are no blocking errors.
+
+---
+
 ## MCP Bridge Functions
 
-These functions require `pip install ez-ptc[mcp]` and are imported from `ez_ptc.mcp`:
+These functions require `pip install "ez-ptc[mcp]"` and are imported from `ez_ptc.mcp`:
 
 ```python
 from ez_ptc.mcp import tools_from_mcp, get_mcp_prompt, list_mcp_prompts
@@ -292,6 +396,7 @@ await tools_from_mcp(
     *,
     tool_names: list[str] | None = None,
     include_resources: bool = True,
+    return_schemas: dict[str, dict] | None = None,
 ) -> list[Tool]
 ```
 
@@ -302,6 +407,7 @@ Discover MCP tools and resources, wrap them as ez-ptc `Tool` objects.
 | `session` | `ClientSession` | required | An active MCP ClientSession |
 | `tool_names` | `list[str] \| None` | `None` | Only include tools whose names match. Applies to MCP tools AND resource tools. |
 | `include_resources` | `bool` | `True` | Whether to wrap static resources and resource templates |
+| `return_schemas` | `dict[str, dict] \| None` | `None` | Map of tool name → JSON schema for return types |
 
 **Returns:** `list[Tool]`
 

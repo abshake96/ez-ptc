@@ -11,7 +11,7 @@ try:
 except ImportError:
     raise ImportError(
         "MCP support requires the 'mcp' package. Install it with: "
-        "pip install ez-ptc[mcp]  or  pip install mcp"
+        "uv add 'ez-ptc[mcp]'  or  pip install 'ez-ptc[mcp]'"
     )
 
 from .tool import Tool
@@ -200,8 +200,8 @@ def _make_resource_template_fn(
 
         # Fill template
         uri = uri_template
-        for name, value in arguments.items():
-            uri = uri.replace(f"{{{name}}}", str(value))
+        for param_name, value in arguments.items():
+            uri = uri.replace(f"{{{param_name}}}", str(value))
 
         result = await session.read_resource(uri)
         return _process_resource_result(result)

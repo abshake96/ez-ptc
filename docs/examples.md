@@ -47,13 +47,13 @@ export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 
 # Run any example
-uv run python examples/example_openai.py
-uv run python examples/example_anthropic.py
-uv run python examples/example_prompt_mode.py
-uv run python examples/example_litellm.py
-uv run python examples/example_langchain.py
-uv run python examples/example_pydantic_ai.py
-uv run python examples/example_google_genai.py
+uv run python examples/frameworks/example_openai.py
+uv run python examples/frameworks/example_anthropic.py
+uv run python examples/prompt_mode/example_prompt_mode.py
+uv run python examples/frameworks/example_litellm.py
+uv run python examples/frameworks/example_langchain.py
+uv run python examples/frameworks/example_pydantic_ai.py
+uv run python examples/frameworks/example_google_genai.py
 ```
 
 ## A note on `tool_prompt()`
@@ -78,7 +78,7 @@ All tool-mode examples include `toolkit.tool_prompt()` in the system prompt. Thi
 
 ## Prompt Mode (framework-free)
 
-**File:** [`example_prompt_mode.py`](../examples/example_prompt_mode.py)
+**File:** [`example_prompt_mode.py`](../examples/prompt_mode/example_prompt_mode.py)
 
 The simplest integration. No tool calling protocol — the LLM writes code in a markdown block.
 
@@ -97,18 +97,18 @@ response = client.chat.completions.create(
 
 # Extract code from markdown and execute
 code = toolkit.extract_code(response.choices[0].message.content)
-result = toolkit.execute(code)
+result = toolkit.execute_sync(code)
 ```
 
 ## OpenAI (tool mode)
 
-**File:** [`example_openai.py`](../examples/example_openai.py)
+**File:** [`example_openai.py`](../examples/frameworks/example_openai.py)
 
 Native tool calling with OpenAI's chat completions API.
 
 ```python
 tool_schema = toolkit.tool_schema(format="openai")
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 # Register tool and run agentic loop
 response = client.chat.completions.create(
@@ -126,13 +126,13 @@ for tool_call in choice.message.tool_calls:
 
 ## Anthropic (tool mode)
 
-**File:** [`example_anthropic.py`](../examples/example_anthropic.py)
+**File:** [`example_anthropic.py`](../examples/frameworks/example_anthropic.py)
 
 Uses Anthropic's native `tool_use` format.
 
 ```python
 tool_schema = toolkit.tool_schema(format="anthropic")
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 response = client.messages.create(
     model="claude-sonnet-4-5-20250514",
@@ -149,7 +149,7 @@ for block in response.content:
 
 ## LiteLLM (any provider)
 
-**File:** [`example_litellm.py`](../examples/example_litellm.py)
+**File:** [`example_litellm.py`](../examples/frameworks/example_litellm.py)
 
 Same as OpenAI but uses LiteLLM for provider-agnostic calls. Swap the model string to use any provider:
 
@@ -168,14 +168,14 @@ response = litellm.completion(
 
 ## LangChain
 
-**File:** [`example_langchain.py`](../examples/example_langchain.py)
+**File:** [`example_langchain.py`](../examples/frameworks/example_langchain.py)
 
 Wraps the ez-ptc meta-tool as a LangChain tool.
 
 ```python
 from langchain_core.tools import tool as langchain_tool
 
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 @langchain_tool
 def execute_tools(code: str) -> str:
@@ -187,14 +187,14 @@ llm = ChatOpenAI(model="gpt-4.1-mini").bind_tools([execute_tools])
 
 ## Pydantic AI
 
-**File:** [`example_pydantic_ai.py`](../examples/example_pydantic_ai.py)
+**File:** [`example_pydantic_ai.py`](../examples/frameworks/example_pydantic_ai.py)
 
 The most concise integration — Pydantic AI handles the agentic loop automatically.
 
 ```python
 from pydantic_ai import Agent, Tool as PydanticTool
 
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 
 agent = Agent(
     "openai:gpt-4.1-mini",
@@ -205,7 +205,7 @@ result = agent.run_sync(USER_PROMPT)
 
 ## Google Gemini
 
-**File:** [`example_google_genai.py`](../examples/example_google_genai.py)
+**File:** [`example_google_genai.py`](../examples/frameworks/example_google_genai.py)
 
 Uses the Google GenAI SDK. Requires converting the OpenAI schema format to Google's function declaration format.
 

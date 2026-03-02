@@ -98,7 +98,13 @@ class Toolkit:
                     f"Expected Tool instance, got {type(item).__name__}. Did you forget @ez_tool?"
                 )
         self.tools = tools
-        self._tool_map = {t.name: t for t in tools}
+        self._tool_map: dict[str, Tool] = {}
+        for t in tools:
+            if t.name in self._tool_map:
+                raise ValueError(
+                    f"Duplicate tool name '{t.name}'. Each tool in a Toolkit must have a unique name."
+                )
+            self._tool_map[t.name] = t
         self._custom_preamble = preamble
         self._custom_postamble = postamble
         self._assist_tool_chaining = assist_tool_chaining
@@ -151,6 +157,9 @@ class Toolkit:
         - Tool signatures with docstrings
         - Postamble (instructions for the LLM)
         """
+        if not self.tools:
+            return "No tools are available."
+
         parts = [self._preamble, "", "Available tools:", ""]
 
         for tool in self.tools:

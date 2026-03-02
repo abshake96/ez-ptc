@@ -94,7 +94,7 @@ response = client.chat.completions.create(
 )
 
 code = toolkit.extract_code(response.choices[0].message.content)
-result = toolkit.execute(code)
+result = toolkit.execute_sync(code)
 print(result.output)
 ```
 
@@ -105,7 +105,7 @@ from openai import OpenAI
 import json
 
 client = OpenAI()
-execute_fn = toolkit.as_tool()
+execute_fn = toolkit.as_tool_sync()
 tool_schema = toolkit.tool_schema(format="openai")
 
 messages = [
