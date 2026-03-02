@@ -1,21 +1,26 @@
-"""ez-ptc + LiteLLM — Tool mode example.
+"""ez-ptc + OpenAI — Tool mode example.
 
-Uses toolkit.as_tool() with LiteLLM's unified API. LiteLLM uses the
-OpenAI tool calling format and translates it to any provider.
+Uses toolkit.as_tool() to register a single meta-tool with OpenAI's
+chat completions API. The LLM calls the meta-tool with Python code,
+ez-ptc executes it and returns the result.
 
 Also shows the difference between assist_tool_chaining=True and False.
 
 Usage:
-    uv run python examples/example_litellm.py
+    uv run python examples/frameworks/example_openai.py
 
 Requires:
-    OPENAI_API_KEY in .env or environment (for openai/ models)
-    pip install litellm
+    OPENAI_API_KEY in .env or environment
 """
 
 import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
+from openai import OpenAI
 
 from shared_tools import USER_PROMPT, toolkit, toolkit_basic
 
@@ -23,7 +28,7 @@ load_dotenv()
 
 
 def main():
-    import litellm
+    client = OpenAI()
 
     # ── Compare: with vs without tool chaining ──────────────────────
     print("=" * 60)
@@ -46,7 +51,7 @@ def main():
 
     # ── Main flow: uses the chaining-enabled toolkit ────────────────
     tool_schema = toolkit.tool_schema(format="openai")
-    execute_fn = toolkit.as_tool()
+    execute_fn = toolkit.as_tool_sync()
 
     messages = [
         {"role": "system", "content": f"You are a helpful assistant.\n\n{toolkit.tool_prompt()}"},
@@ -55,22 +60,20 @@ def main():
 
     print(f"User: {USER_PROMPT}\n")
 
-    # Agentic loop — identical pattern to OpenAI, just swap the model string
-    # e.g. "anthropic/claude-sonnet-4-5-20250514", "gemini/gemini-2.0-flash", etc.
+    # Agentic loop
     for turn in range(10):
-        response = litellm.completion(
-            model="openai/gpt-4.1-mini",
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
             messages=messages,
             tools=[tool_schema],
         )
 
         choice = response.choices[0]
-        message = choice.message
 
-        if message.tool_calls:
-            messages.append(message)
+        if choice.finish_reason == "tool_calls" or choice.message.tool_calls:
+            messages.append(choice.message)
 
-            for tool_call in message.tool_calls:
+            for tool_call in choice.message.tool_calls:
                 args = json.loads(tool_call.function.arguments)
                 print(f"[Tool call] execute_tools(code=...)")
                 print(f"  Code:\n{_indent(args['code'])}")
@@ -79,13 +82,12 @@ def main():
                 print(f"  Result:\n{_indent(result)}\n")
 
                 messages.append({
-                    "tool_call_id": tool_call.id,
                     "role": "tool",
-                    "name": tool_call.function.name,
+                    "tool_call_id": tool_call.id,
                     "content": result,
                 })
         else:
-            print(f"Assistant: {message.content}")
+            print(f"Assistant: {choice.message.content}")
             break
 
 

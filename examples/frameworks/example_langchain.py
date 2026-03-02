@@ -6,12 +6,17 @@ then bound to a chat model via bind_tools().
 Also shows the difference between assist_tool_chaining=True and False.
 
 Usage:
-    uv run python examples/example_langchain.py
+    uv run python examples/frameworks/example_langchain.py
 
 Requires:
     OPENAI_API_KEY in .env or environment
     pip install langchain-openai langchain-core
 """
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
@@ -47,8 +52,9 @@ def main():
     print("=" * 60 + "\n")
 
     # ── Main flow: uses the chaining-enabled toolkit ────────────────
-    # Wrap ez-ptc's meta-tool with LangChain's @tool decorator
-    execute_fn = toolkit.as_tool()
+    # LangChain requires its own @tool decorator for schema extraction,
+    # so we wrap ez-ptc's meta-tool in a thin @langchain_tool function.
+    execute_fn = toolkit.as_tool_sync()
 
     @langchain_tool
     def execute_tools(code: str) -> str:

@@ -6,12 +6,17 @@ register a single meta-tool with Anthropic's messages API.
 Also shows the difference between assist_tool_chaining=True and False.
 
 Usage:
-    uv run python examples/example_anthropic.py
+    uv run python examples/frameworks/example_anthropic.py
 
 Requires:
     ANTHROPIC_API_KEY in .env or environment
     pip install anthropic
 """
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
@@ -45,7 +50,7 @@ def main():
     # ── Main flow: uses the chaining-enabled toolkit ────────────────
     client = anthropic.Anthropic()
     tool_schema = toolkit.tool_schema(format="anthropic")
-    execute_fn = toolkit.as_tool()
+    execute_fn = toolkit.as_tool_sync()
 
     messages = [
         {"role": "user", "content": USER_PROMPT},

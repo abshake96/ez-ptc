@@ -188,6 +188,21 @@ When `assist_tool_chaining=False` (the default), output is identical to a toolki
 
 See [Tool Chaining](tool-chaining.md) for the full guide.
 
+## MCP Tool Bridge
+
+ez-ptc can wrap tools from any [MCP](https://modelcontextprotocol.io/) server as native `Tool` objects. This means file systems, databases, APIs, and dev tools exposed via MCP can be orchestrated with the same multi-tool-per-round-trip pattern.
+
+```python
+from ez_ptc import Toolkit
+
+# One line — discovers all MCP tools and resources
+toolkit = await Toolkit.from_mcp(session)
+```
+
+MCP tools, static resources, and resource templates all become `Tool` objects. MCP prompt templates are accessed separately via `get_mcp_prompt()` for system prompt injection.
+
+The bridge requires `pip install ez-ptc[mcp]`. The core library stays zero-dependency. See [MCP Tool Bridge](mcp-bridge.md) for the full guide.
+
 ## How it fits together
 
 ```
@@ -198,7 +213,11 @@ See [Tool Chaining](tool-chaining.md) for the full guide.
 │  def get_weather()         def search_products()         │
 │  -> WeatherResult          -> list[ProductResult]        │
 │       │                          │                       │
-│       └────────┬─────────────────┘                       │
+│       │      MCP Server ─── Toolkit.from_mcp(session)    │
+│       │       (tools,              │                     │
+│       │        resources)          │                     │
+│       │            │               │                     │
+│       └────────┬───┴───────────────┘                     │
 │                ▼                                         │
 │  Toolkit([...], assist_tool_chaining=True)               │
 │       │               │                                  │

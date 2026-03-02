@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.0] - 2026-03-02
+
+### Added
+
+- **Async-first execution**: `Toolkit.execute()` and `SandboxBackend.execute()` are now async; sync convenience methods `execute_sync()` and `as_tool_sync()` provided for non-async contexts
+- **Pluggable sandbox backend**: New `SandboxBackend` abstract base class and `LocalSandbox` implementation — pass custom sandboxes via `Toolkit(sandbox=...)`
+- **AST code validator**: `validate_code()` pre-flight checks for dangerous patterns (imports, file I/O, system calls) before execution; `ValidationResult` dataclass for structured results
+- **MCP Tool Bridge**: `Toolkit.from_mcp(session)` wraps MCP server tools/resources as ez-ptc `Tool` objects; `get_mcp_prompt()` / `list_mcp_prompts()` for prompt templates; lazy import keeps core zero-dependency; optional extra: `ez-ptc[mcp]`
+- **Toolkit-level timeout**: `Toolkit(timeout=30.0)` sets default execution timeout
+- **Per-framework MCP live examples**: `example_mcp_openai.py`, `example_mcp_anthropic.py`, `example_mcp_langchain.py`, `example_mcp_pydantic_ai.py`, `example_mcp_litellm.py`, `example_mcp_google_genai.py` — each runs a real agentic loop against a live MCP filesystem server
+- **Final LLM response display**: All MCP live examples now print a `--- Final Response ---` section and handle loop exhaustion gracefully
+- Custom `preamble` / `postamble` support in `Toolkit` constructor
+- `examples/README.md` with full directory structure and run instructions
+- Reorganized examples into `basics/`, `frameworks/`, `prompt_mode/`, `advanced/`, `mcp_live/`
+- Advanced examples: custom sandbox, error handling, async tools, Pydantic models, advanced schemas, validation, MCP bridge (mock)
+- Multi-turn error recovery example (`prompt_mode/example_error_recovery.py`)
+- Expanded documentation: MCP bridge guide, updated API reference, concepts, getting started
+
+### Changed
+
+- `_run_sync()` helper in toolkit.py detects running event loops and falls back to thread-based execution
+- `execute_code()` in executor.py stays sync — `LocalSandbox.execute()` wraps it with `asyncio.to_thread`
+- Existing framework examples updated with `as_tool_sync()` for sync contexts
+
 ## [0.1.4] - 2026-03-01
 
 ### Added

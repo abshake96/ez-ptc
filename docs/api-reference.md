@@ -93,6 +93,32 @@ Toolkit(
 | `postamble` | `str \| None` | `None` | Custom instruction text for `prompt()`. Uses default if `None`. |
 | `assist_tool_chaining` | `bool` | `False` | When `True`, appends return schema info to tool listings |
 
+### Class Methods
+
+#### `await Toolkit.from_mcp(session, *, tool_names=None, include_resources=True, extra_tools=None, **kwargs) -> Toolkit`
+
+Create a Toolkit from an MCP server session. Discovers tools and resources, wraps them as `Tool` objects. Requires `pip install ez-ptc[mcp]`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `session` | `ClientSession` | required | An active MCP ClientSession |
+| `tool_names` | `list[str] \| None` | `None` | Only include tools whose names match this list |
+| `include_resources` | `bool` | `True` | Whether to wrap resources/templates as tools |
+| `extra_tools` | `list[Tool] \| None` | `None` | Additional local `Tool` objects to include |
+| `**kwargs` | | | Passed to `Toolkit.__init__` (preamble, postamble, etc.) |
+
+```python
+toolkit = await Toolkit.from_mcp(session, extra_tools=[my_tool], assist_tool_chaining=True)
+```
+
+#### `Toolkit.from_mcp_sync(session, **kwargs) -> Toolkit`
+
+Sync version of `from_mcp()`. Same parameters.
+
+```python
+toolkit = Toolkit.from_mcp_sync(session, include_resources=False)
+```
+
 ### Methods
 
 #### `prompt() -> str`
@@ -247,3 +273,95 @@ Extract a complete schema from a Python function. Lower-level utility used inter
     "return_schema": {...}  # Only present for structured return types
 }
 ```
+
+---
+
+## MCP Bridge Functions
+
+These functions require `pip install ez-ptc[mcp]` and are imported from `ez_ptc.mcp`:
+
+```python
+from ez_ptc.mcp import tools_from_mcp, get_mcp_prompt, list_mcp_prompts
+```
+
+### `tools_from_mcp`
+
+```python
+await tools_from_mcp(
+    session: ClientSession,
+    *,
+    tool_names: list[str] | None = None,
+    include_resources: bool = True,
+) -> list[Tool]
+```
+
+Discover MCP tools and resources, wrap them as ez-ptc `Tool` objects.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `session` | `ClientSession` | required | An active MCP ClientSession |
+| `tool_names` | `list[str] \| None` | `None` | Only include tools whose names match. Applies to MCP tools AND resource tools. |
+| `include_resources` | `bool` | `True` | Whether to wrap static resources and resource templates |
+
+**Returns:** `list[Tool]`
+
+```python
+tools = await tools_from_mcp(session, tool_names=["search", "fetch"])
+toolkit = Toolkit(tools + [my_local_tool])
+```
+
+### `get_mcp_prompt`
+
+```python
+await get_mcp_prompt(
+    session: ClientSession,
+    name: str,
+    arguments: dict[str, str] | None = None,
+) -> str
+```
+
+Fetch and expand an MCP prompt template. Returns the text content of all messages joined together.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `session` | `ClientSession` | required | An active MCP ClientSession |
+| `name` | `str` | required | The prompt name to fetch |
+| `arguments` | `dict[str, str] \| None` | `None` | Arguments to fill the prompt template |
+
+**Returns:** `str`
+
+```python
+system_text = await get_mcp_prompt(session, "code_review", {"language": "python"})
+```
+
+### `list_mcp_prompts`
+
+```python
+await list_mcp_prompts(session: ClientSession) -> list[dict]
+```
+
+List available MCP prompts with their arguments.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `session` | `ClientSession` | required | An active MCP ClientSession |
+
+**Returns:** `list[dict]` — each dict contains:
+
+```python
+{
+    "name": "prompt_name",
+    "description": "What this prompt does",
+    "arguments": [
+        {"name": "arg_name", "description": "...", "required": True},
+    ]
+}
+```
+
+```python
+prompts = await list_mcp_prompts(session)
+for p in prompts:
+    print(f"{p['name']}: {p['description']}")
+```
+
+See [MCP Tool Bridge](mcp-bridge.md) for the full guide.

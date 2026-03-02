@@ -44,9 +44,10 @@ With `assist_tool_chaining=True`, the LLM sees return type hints like `# Returns
 | [Concepts](concepts.md) | Core ideas: tools, toolkits, two modes, execution |
 | [Prompt Mode](prompt-mode.md) | Framework-free integration via system prompts |
 | [Tool Mode](tool-mode.md) | Native framework integration (OpenAI, Anthropic, etc.) |
+| [MCP Tool Bridge](mcp-bridge.md) | Wrap MCP server tools and resources as ez-ptc tools |
 | [Tool Chaining](tool-chaining.md) | Teach the LLM the exact return shape of each tool — eliminates KeyError guessing |
 | [API Reference](api-reference.md) | Full API docs for all public classes and functions |
-| [Framework Examples](examples.md) | Integration examples for 7 frameworks |
+| [Framework Examples](examples.md) | Integration examples for 7+ frameworks |
 | [Security & Sandboxing](security.md) | How code execution is sandboxed |
 
 ## Quick comparison: Prompt Mode vs Tool Mode
@@ -62,3 +63,4 @@ With `assist_tool_chaining=True`, the LLM sees return type hints like `# Returns
 
 - Python 3.11+
 - No required LLM provider dependencies — bring your own client
+- Optional: `pip install ez-ptc[mcp]` for [MCP Tool Bridge](mcp-bridge.md) support

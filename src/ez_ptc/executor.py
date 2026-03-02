@@ -60,6 +60,7 @@ class _TimeoutError(Exception):
 def _make_tool_wrapper(
     tool: Tool,
     call_log: list[dict[str, Any]],
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> Callable[..., Any]:
     """Create a wrapper around a tool function that logs calls."""
 
@@ -74,18 +75,23 @@ def _make_tool_wrapper(
 
         # Handle async tools
         if asyncio.iscoroutine(result):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop and loop.is_running():
-                # We're already in an async context — run in a new thread
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    result = pool.submit(asyncio.run, result).result()
+            if loop is not None and loop.is_running():
+                # Efficient path: dispatch to the main event loop
+                future = asyncio.run_coroutine_threadsafe(result, loop)
+                result = future.result()
             else:
-                result = asyncio.run(result)
+                try:
+                    current_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    current_loop = None
+
+                if current_loop and current_loop.is_running():
+                    # We're already in an async context — run in a new thread
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        result = pool.submit(asyncio.run, result).result()
+                else:
+                    result = asyncio.run(result)
 
         call_record["result"] = result
         call_log.append(call_record)
@@ -233,6 +239,7 @@ def execute_code(
     code: str,
     tools: dict[str, Tool],
     timeout: float = 30.0,
+    loop: asyncio.AbstractEventLoop | None = None,
 ) -> ExecutionResult:
     """Execute LLM-generated Python code with tools injected as globals.
 
@@ -240,6 +247,7 @@ def execute_code(
         code: Python code string to execute
         tools: Dict mapping tool names to Tool objects
         timeout: Maximum execution time in seconds
+        loop: Optional event loop for efficient async tool dispatch
 
     Returns:
         ExecutionResult with captured output, tool calls, and error info
@@ -265,7 +273,7 @@ def execute_code(
 
     # Add tool wrappers
     for name, tool in tools.items():
-        namespace[name] = _make_tool_wrapper(tool, call_log)
+        namespace[name] = _make_tool_wrapper(tool, call_log, loop=loop)
 
     result = ExecutionResult()
 

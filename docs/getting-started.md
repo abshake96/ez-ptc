@@ -8,6 +8,10 @@ uv add ez-ptc
 
 # Using pip
 pip install ez-ptc
+
+# For MCP server integration
+uv add "ez-ptc[mcp]"
+# or: pip install "ez-ptc[mcp]"
 ```
 
 ## Define your first tools
@@ -174,5 +178,6 @@ See [Tool Chaining](tool-chaining.md) for the full guide.
 ## Next steps
 
 - [Concepts](concepts.md) — understand the core architecture
+- [MCP Tool Bridge](mcp-bridge.md) — wrap MCP server tools as ez-ptc tools
 - [Tool Chaining](tool-chaining.md) — TypedDict, Pydantic, and explicit return schemas
 - [Framework Examples](examples.md) — copy-paste integration code

@@ -66,14 +66,15 @@ All tool-mode examples include `toolkit.tool_prompt()` in the system prompt. Thi
 
 | Example | Mode | Framework | Provider |
 |---------|------|-----------|----------|
-| [`example_prompt_mode.py`](../examples/example_prompt_mode.py) | Prompt | None (raw API) | OpenAI |
-| [`example_openai.py`](../examples/example_openai.py) | Tool | OpenAI SDK | OpenAI |
-| [`example_anthropic.py`](../examples/example_anthropic.py) | Tool | Anthropic SDK | Anthropic |
-| [`example_litellm.py`](../examples/example_litellm.py) | Tool | LiteLLM | Any |
-| [`example_langchain.py`](../examples/example_langchain.py) | Tool | LangChain | OpenAI |
-| [`example_pydantic_ai.py`](../examples/example_pydantic_ai.py) | Tool | Pydantic AI | OpenAI |
-| [`example_google_genai.py`](../examples/example_google_genai.py) | Tool | Google GenAI | Gemini |
-| [`example_demo.py`](../examples/example_demo.py) | Both | None (simulated) | None |
+| [`example_prompt_mode.py`](../examples/prompt_mode/example_prompt_mode.py) | Prompt | None (raw API) | OpenAI |
+| [`example_openai.py`](../examples/frameworks/example_openai.py) | Tool | OpenAI SDK | OpenAI |
+| [`example_anthropic.py`](../examples/frameworks/example_anthropic.py) | Tool | Anthropic SDK | Anthropic |
+| [`example_litellm.py`](../examples/frameworks/example_litellm.py) | Tool | LiteLLM | Any |
+| [`example_langchain.py`](../examples/frameworks/example_langchain.py) | Tool | LangChain | OpenAI |
+| [`example_pydantic_ai.py`](../examples/frameworks/example_pydantic_ai.py) | Tool | Pydantic AI | OpenAI |
+| [`example_google_genai.py`](../examples/frameworks/example_google_genai.py) | Tool | Google GenAI | Gemini |
+| [`example_mcp_bridge.py`](../examples/advanced/example_mcp_bridge.py) | Both | MCP | Any |
+| [`example_demo.py`](../examples/basics/example_demo.py) | Both | None (simulated) | None |
 
 ## Prompt Mode (framework-free)
 
@@ -221,8 +222,31 @@ func_decl = FunctionDeclaration(
 tools = [GenaiTool(function_declarations=[func_decl])]
 ```
 
+## MCP Tool Bridge
+
+**File:** [`example_mcp_bridge.py`](../examples/advanced/example_mcp_bridge.py)
+
+Shows how to wrap MCP server tools as ez-ptc tools. Requires `pip install ez-ptc[mcp]` and an MCP server.
+
+```python
+from ez_ptc import Toolkit, ez_tool
+from ez_ptc.mcp import tools_from_mcp, get_mcp_prompt
+
+# One line — discovers all tools and resources
+toolkit = await Toolkit.from_mcp(session)
+
+# Or with more control — filter + mix with local tools
+mcp_tools = await tools_from_mcp(session, tool_names=["search", "fetch"])
+toolkit = Toolkit(mcp_tools + [my_local_tool], assist_tool_chaining=True)
+
+# MCP prompt templates — use for system prompt injection
+system_text = await get_mcp_prompt(session, "code_review", {"language": "python"})
+```
+
+See [MCP Tool Bridge](mcp-bridge.md) for the full guide.
+
 ## Demo (no API keys needed)
 
-**File:** [`example_demo.py`](../examples/example_demo.py)
+**File:** [`example_demo.py`](../examples/basics/example_demo.py)
 
 A self-contained demo that shows both prompt mode and tool mode with simulated LLM responses. No API keys required — useful for understanding how ez-ptc works.

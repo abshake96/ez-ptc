@@ -8,11 +8,16 @@ OpenAI API calls.
 Also shows the difference between assist_tool_chaining=True and False.
 
 Usage:
-    uv run python examples/example_prompt_mode.py
+    uv run python examples/prompt_mode/example_prompt_mode.py
 
 Requires:
     OPENAI_API_KEY in .env or environment
 """
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -66,7 +71,7 @@ def main():
         print(code)
         print()
 
-        result = toolkit.execute(code)
+        result = toolkit.execute_sync(code)
         print("--- Execution Result ---")
         print(f"Success: {result.success}")
         print(f"Output:\n{result.output}")

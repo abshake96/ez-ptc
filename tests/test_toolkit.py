@@ -2,7 +2,11 @@
 
 from typing import TypedDict
 
+import pytest
+
 from ez_ptc import ExecutionResult, Toolkit, ez_tool
+from ez_ptc.executor import ExecutionResult as ER
+from ez_ptc.sandbox import LocalSandbox
 
 
 @ez_tool
@@ -205,23 +209,50 @@ class TestAsTool:
         assert "get_weather" in fn.__doc__
         assert "search_database" in fn.__doc__
 
+    def test_sync_returns_callable(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool_sync()
+        assert callable(fn)
+
+    def test_sync_function_metadata(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool_sync()
+        assert fn.__name__ == "execute_tools"
+        assert fn.__annotations__ == {"code": str, "return": str}
+        assert "get_weather" in fn.__doc__
+        assert "search_database" in fn.__doc__
+
     def test_execution_success(self):
         tk = _make_toolkit()
-        fn = tk.as_tool()
+        fn = tk.as_tool_sync()
         result = fn('print("hello from tool mode")')
         assert "hello from tool mode" in result
 
     def test_execution_with_tools(self):
         tk = _make_toolkit()
-        fn = tk.as_tool()
+        fn = tk.as_tool_sync()
         result = fn('w = get_weather("SF")\nprint(w["condition"])')
         assert "sunny" in result
 
     def test_execution_failure(self):
         tk = _make_toolkit()
-        fn = tk.as_tool()
+        fn = tk.as_tool_sync()
         result = fn("x = undefined_var")
         assert "NameError" in result
+
+    @pytest.mark.asyncio
+    async def test_async_execution_success(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool()
+        result = await fn('print("hello async")')
+        assert "hello async" in result
+
+    @pytest.mark.asyncio
+    async def test_async_execution_with_tools(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool()
+        result = await fn('w = get_weather("SF")\nprint(w["condition"])')
+        assert "sunny" in result
 
 
 class TestToolSchema:
@@ -249,7 +280,7 @@ class TestToolSchema:
 class TestExecute:
     def test_basic_execute(self):
         tk = _make_toolkit()
-        result = tk.execute('print("test")')
+        result = tk.execute_sync('print("test")')
         assert result.success
         assert "test" in result.output
 
@@ -260,7 +291,7 @@ weather = get_weather("Boston", unit="fahrenheit")
 products = search_database("coats", limit=3)
 print(f"Temp: {weather['temp']}, Products: {len(products)}")
 """
-        result = tk.execute(code)
+        result = tk.execute_sync(code)
         assert result.success
         assert "22" in result.output
         assert "3" in result.output
@@ -268,9 +299,24 @@ print(f"Temp: {weather['temp']}, Products: {len(products)}")
 
     def test_execute_error(self):
         tk = _make_toolkit()
-        result = tk.execute("1/0")
+        result = tk.execute_sync("1/0")
         assert not result.success
         assert "ZeroDivisionError" in result.error
+
+    @pytest.mark.asyncio
+    async def test_async_basic_execute(self):
+        tk = _make_toolkit()
+        result = await tk.execute('print("async test")')
+        assert result.success
+        assert "async test" in result.output
+
+    @pytest.mark.asyncio
+    async def test_async_execute_with_tools(self):
+        tk = _make_toolkit()
+        code = 'w = get_weather("NYC")\nprint(w["condition"])'
+        result = await tk.execute(code)
+        assert result.success
+        assert "sunny" in result.output
 
 
 # ── End-to-end tests ─────────────────────────────────────────────────
@@ -304,7 +350,7 @@ This code checks the weather and searches for appropriate products.'''
         assert code is not None
 
         # 4. Execute
-        result = tk.execute(code)
+        result = tk.execute_sync(code)
         assert result.success
         assert "sunny" in result.output
         assert "3" in result.output
@@ -314,8 +360,8 @@ This code checks the weather and searches for appropriate products.'''
         """Simulate the full tool mode flow."""
         tk = _make_toolkit()
 
-        # 1. Get meta-tool
-        execute_fn = tk.as_tool()
+        # 1. Get meta-tool (sync version for sync test)
+        execute_fn = tk.as_tool_sync()
 
         # 2. Get schema for framework registration
         schema = tk.tool_schema()
@@ -573,3 +619,89 @@ class TestDoNotImportTools:
         tk = _make_toolkit()
         desc = tk.tool_schema()["function"]["description"]
         assert "do NOT import" in desc
+
+
+# ── Validation integration tests ──────────────────────────────────────
+
+
+class TestValidation:
+    def test_errors_block_execution(self):
+        tk = _make_toolkit()
+        result = tk.execute_sync("import get_weather")
+        assert not result.success
+        assert "Validation failed" in result.error
+
+    def test_warnings_in_output(self):
+        tk = _make_toolkit()
+        result = tk.execute_sync("x = ''.__class__\nprint('hi')", validate=True)
+        assert result.success
+        assert "Validation warnings" in result.error_output
+
+    def test_validate_false_skips(self):
+        tk = _make_toolkit()
+        result = tk.execute_sync("import get_weather", validate=False)
+        assert not result.success
+        assert "ImportError" in result.error
+
+    def test_dangerous_attr_blocked(self):
+        tk = _make_toolkit()
+        result = tk.execute_sync("x = ''.__class__.__globals__")
+        assert not result.success
+        assert "Validation failed" in result.error
+        assert "__globals__" in result.error
+
+
+# ── Timeout tests ─────────────────────────────────────────────────────
+
+
+class TestTimeout:
+    def test_default_timeout_is_30(self):
+        tk = _make_toolkit()
+        assert tk._timeout == 30.0
+
+    def test_custom_timeout(self):
+        tk = _make_toolkit(timeout=5.0)
+        assert tk._timeout == 5.0
+
+    def test_per_call_override(self):
+        tk = _make_toolkit(timeout=30.0)
+        result = tk.execute_sync("while True: pass", timeout=1.0, validate=False)
+        assert not result.success
+        assert "timed out" in result.error
+
+    def test_as_tool_respects_timeout(self):
+        tk = Toolkit([get_weather, search_database], timeout=1.0)
+        fn = tk.as_tool_sync()
+        result = fn("while True: pass")
+        assert "timed out" in result.lower() or "validation" in result.lower()
+
+
+# ── Sandbox backend tests ─────────────────────────────────────────────
+
+
+class _RecordingSandbox:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, code, tools, timeout):
+        self.calls.append({"code": code, "timeout": timeout})
+        return ER(success=True, output="recorded")
+
+
+class TestSandboxBackend:
+    def test_default_is_local_sandbox(self):
+        tk = _make_toolkit()
+        assert isinstance(tk._sandbox, LocalSandbox)
+
+    def test_custom_backend_used(self):
+        recorder = _RecordingSandbox()
+        tk = Toolkit([get_weather], sandbox=recorder)
+        result = tk.execute_sync('print("hi")', validate=False)
+        assert result.output == "recorded"
+        assert len(recorder.calls) == 1
+
+    def test_sandbox_receives_timeout(self):
+        recorder = _RecordingSandbox()
+        tk = Toolkit([get_weather], sandbox=recorder, timeout=42.0)
+        tk.execute_sync('print("hi")', validate=False)
+        assert recorder.calls[0]["timeout"] == 42.0

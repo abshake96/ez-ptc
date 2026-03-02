@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import inspect
 import re
-from typing import Any, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal
 
-from .executor import ExecutionResult, execute_code
+from .executor import ExecutionResult
+from .sandbox import LocalSandbox, SandboxBackend
 from .schema import format_return_schema
 from .tool import Tool
+from .validator import validate_code
+
+
+def _run_sync(coro: Awaitable[Any]) -> Any:
+    """Run a coroutine synchronously, handling running event loops."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    # Already in async context — run in a new thread with its own loop
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 def _build_preamble(assist_tool_chaining: bool) -> str:
@@ -74,6 +89,8 @@ class Toolkit:
         preamble: str | None = None,
         postamble: str | None = None,
         assist_tool_chaining: bool = False,
+        timeout: float = 30.0,
+        sandbox: SandboxBackend | None = None,
     ) -> None:
         for item in tools:
             if not isinstance(item, Tool):
@@ -85,6 +102,8 @@ class Toolkit:
         self._custom_preamble = preamble
         self._custom_postamble = postamble
         self._assist_tool_chaining = assist_tool_chaining
+        self._timeout = timeout
+        self._sandbox: SandboxBackend = sandbox or LocalSandbox()
 
     def __iter__(self):
         return iter(self.tools)
@@ -221,8 +240,8 @@ class Toolkit:
         parts.append("ALWAYS print() the final result you want to return.")
         return "\n".join(parts)
 
-    def as_tool(self) -> Callable[[str], str]:
-        """Return a callable function that any framework can register as a tool.
+    def as_tool(self) -> Callable[[str], Awaitable[str]]:
+        """Return an async callable function that any framework can register as a tool.
 
         The returned function:
         - Accepts `code: str` — Python code to execute
@@ -261,14 +280,37 @@ class Toolkit:
 
         toolkit_ref = self
 
-        def execute_tools(code: str) -> str:
-            result = toolkit_ref.execute(code)
+        async def execute_tools(code: str) -> str:
+            result = await toolkit_ref.execute(code)
             return result.to_string()
 
         execute_tools.__name__ = "execute_tools"
         execute_tools.__qualname__ = "execute_tools"
         execute_tools.__doc__ = docstring
         execute_tools.__annotations__ = {"code": str, "return": str}
+
+        return execute_tools
+
+    def as_tool_sync(self) -> Callable[[str], str]:
+        """Return a sync callable function that any framework can register as a tool.
+
+        The returned function:
+        - Accepts `code: str` — Python code to execute
+        - Returns `str` — stdout on success, stderr/error on failure
+        - Has proper type hints, docstring, and __name__ for framework introspection
+        """
+        # Reuse as_tool() for docstring/metadata, then wrap sync
+        async_fn = self.as_tool()
+        toolkit_ref = self
+
+        def execute_tools(code: str) -> str:
+            result = toolkit_ref.execute_sync(code)
+            return result.to_string()
+
+        execute_tools.__name__ = async_fn.__name__
+        execute_tools.__qualname__ = async_fn.__qualname__
+        execute_tools.__doc__ = async_fn.__doc__
+        execute_tools.__annotations__ = async_fn.__annotations__
 
         return execute_tools
 
@@ -341,16 +383,114 @@ class Toolkit:
             },
         }
 
+    # ── MCP bridge ────────────────────────────────────────────────────
+
+    @classmethod
+    async def from_mcp(
+        cls,
+        session: Any,
+        *,
+        tool_names: list[str] | None = None,
+        include_resources: bool = True,
+        extra_tools: list[Tool] | None = None,
+        return_schemas: dict[str, dict] | None = None,
+        **kwargs: Any,
+    ) -> Toolkit:
+        """Create a Toolkit from an MCP server session.
+
+        Discovers tools and resources from the MCP server and wraps them
+        as ez-ptc Tool objects. Requires the ``mcp`` optional dependency.
+
+        Args:
+            session: An active MCP ClientSession.
+            tool_names: Optional filter — only include tools whose names match.
+            include_resources: Whether to wrap resources/templates as tools.
+            extra_tools: Additional local Tool objects to include.
+            return_schemas: Optional mapping of tool name → return schema dict.
+                Overrides MCP ``outputSchema``. Enables ``assist_tool_chaining``
+                for MCP tools that lack ``outputSchema``.
+            **kwargs: Passed to Toolkit.__init__ (preamble, postamble, etc.).
+        """
+        from .mcp import tools_from_mcp  # lazy import
+
+        mcp_tools = await tools_from_mcp(
+            session,
+            tool_names=tool_names,
+            include_resources=include_resources,
+            return_schemas=return_schemas,
+        )
+        all_tools = mcp_tools + (extra_tools or [])
+        return cls(all_tools, **kwargs)
+
+    @classmethod
+    def from_mcp_sync(
+        cls,
+        session: Any,
+        **kwargs: Any,
+    ) -> Toolkit:
+        """Create a Toolkit from an MCP server session (sync version).
+
+        Convenience wrapper around ``from_mcp()`` for sync contexts.
+        """
+        return _run_sync(cls.from_mcp(session, **kwargs))
+
     # ── Shared ────────────────────────────────────────────────────────
 
-    def execute(self, code: str, timeout: float = 30.0) -> ExecutionResult:
+    async def execute(
+        self,
+        code: str,
+        timeout: float | None = None,
+        validate: bool = True,
+    ) -> ExecutionResult:
         """Execute LLM-generated Python code with tools available.
+
+        This is an async method. For sync usage, use ``execute_sync()``.
 
         Args:
             code: Python code string to execute
-            timeout: Maximum execution time in seconds
+            timeout: Maximum execution time in seconds (None uses toolkit default)
+            validate: Run AST validation before execution (default True)
 
         Returns:
             ExecutionResult with output, tool calls, and error info
         """
-        return execute_code(code, self._tool_map, timeout=timeout)
+        effective_timeout = timeout if timeout is not None else self._timeout
+
+        if validate:
+            vr = validate_code(code, set(self._tool_map.keys()))
+            if not vr.is_safe:
+                return ExecutionResult(
+                    success=False,
+                    error="Validation failed: " + "; ".join(vr.errors),
+                    error_output="Validation errors:\n" + "\n".join(f"- {e}" for e in vr.errors),
+                )
+            warning_prefix = ""
+            if vr.warnings:
+                warning_prefix = "Validation warnings:\n" + "\n".join(f"- {w}" for w in vr.warnings) + "\n"
+
+        result = await self._sandbox.execute(code, self._tool_map, effective_timeout)
+
+        if validate and vr.warnings:
+            result.error_output = warning_prefix + result.error_output
+
+        return result
+
+    def execute_sync(
+        self,
+        code: str,
+        timeout: float | None = None,
+        validate: bool = True,
+    ) -> ExecutionResult:
+        """Execute LLM-generated Python code with tools available (sync version).
+
+        Convenience wrapper around ``execute()`` for sync contexts.
+
+        Args:
+            code: Python code string to execute
+            timeout: Maximum execution time in seconds (None uses toolkit default)
+            validate: Run AST validation before execution (default True)
+
+        Returns:
+            ExecutionResult with output, tool calls, and error info
+        """
+        return _run_sync(self.execute(code, timeout, validate))

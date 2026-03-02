@@ -6,12 +6,17 @@ Pydantic AI handles the tool-calling loop automatically.
 Also shows the difference between assist_tool_chaining=True and False.
 
 Usage:
-    uv run python examples/example_pydantic_ai.py
+    uv run python examples/frameworks/example_pydantic_ai.py
 
 Requires:
     OPENAI_API_KEY in .env or environment
     pip install pydantic-ai
 """
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
