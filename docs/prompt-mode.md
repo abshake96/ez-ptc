@@ -49,20 +49,30 @@ IMPORTANT: Combine ALL operations into a single code block.
 
 Write Python code in a ```python code block.
 
-Call all the tools you need and print() all results in a single code block.
-
-CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys.
-For parallel execution, use asyncio:
+Tool return schemas are not documented — do NOT access, index, or filter return values.
+Only print() each raw result: print(tool_a(...)), print(tool_b(...)).
+For parallel execution, use asyncio (tools are sync — use asyncio.to_thread):
     async def main():
         a, b = await asyncio.gather(asyncio.to_thread(tool1, ...), asyncio.to_thread(tool2, ...))
         print(a, b)
     asyncio.run(main())
+To group multiple tool calls per task, use a regular (not async) wrapper:
+    def process(x):
+        return tool1(x), tool2(x)
+    async def main():
+        results = await asyncio.gather(*[asyncio.to_thread(process, x) for x in items])
+        print(results)
+    asyncio.run(main())
+WARNING: Do NOT pass async functions to asyncio.to_thread — it only works with sync functions.
 
 Environment: json, math, re, asyncio are pre-imported. You can also import other standard library modules (collections, datetime, itertools, etc.).
 Restrictions: No file I/O, networking, or shell access (os, subprocess, socket, etc. are blocked).
 
 ALWAYS print() the final result you want to return.
+If execution returns an error, analyze the traceback, fix your code, and try again.
 ```
+
+> **Note:** The error hint line at the end is the default `error_hint`. You can customize it with `Toolkit(error_hint="...")` or disable it with `Toolkit(error_hint="")`. See [error hints](#error-hints) below.
 
 ### 2. Send to your LLM
 
@@ -128,6 +138,31 @@ Additional rules:
 - Be concise
 """
 ```
+
+## Error hints
+
+The `error_hint` parameter adds a line to the prompt that tells the LLM how to recover from errors. The default is:
+
+```
+If execution returns an error, analyze the traceback, fix your code, and try again.
+```
+
+Customize it for your use case:
+
+```python
+toolkit = Toolkit(
+    tools=[get_weather],
+    error_hint="On error, simplify your approach and try a different strategy.",
+)
+```
+
+Or disable it entirely:
+
+```python
+toolkit = Toolkit(tools=[get_weather], error_hint="")
+```
+
+The error hint appears at the end of `prompt()` output, in `tool_prompt()`, in the `as_tool()` docstring, and in the `tool_schema()` description. When an execution error occurs, `as_tool()` / `as_tool_sync()` also prefix the error output with `ERROR: <hint>` so the LLM sees the recovery guidance alongside the traceback.
 
 ## Full example
 

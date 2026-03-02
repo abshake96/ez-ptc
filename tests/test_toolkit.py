@@ -548,50 +548,51 @@ class TestChainingLanguageConditional:
         tk = _make_toolkit(assist_tool_chaining=False)
         prompt = tk.prompt()
         assert "Chain results" not in prompt
-        assert "print()" in prompt
-        assert "Do NOT assume" in prompt
+        assert "do NOT access" in prompt
+        assert "print(tool_a(...))" in prompt
 
     def test_postamble_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         prompt = tk.prompt()
         assert "Chain results" in prompt
-        assert "Do NOT assume" not in prompt
+        assert "do NOT access" not in prompt
 
     def test_tool_prompt_no_chain_when_disabled(self):
         tk = _make_toolkit(assist_tool_chaining=False)
         tp = tk.tool_prompt()
         assert "Chain results" not in tp
-        assert "Do NOT assume" in tp
+        assert "do NOT access" in tp
+        assert "print(tool_a(...))" in tp
 
     def test_tool_prompt_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         tp = tk.tool_prompt()
         assert "Chain results" in tp
-        assert "Do NOT assume" not in tp
+        assert "do NOT access" not in tp
 
     def test_as_tool_no_chain_when_disabled(self):
         tk = _make_toolkit(assist_tool_chaining=False)
         doc = tk.as_tool().__doc__
         assert "chain between" not in doc.lower()
-        assert "Do NOT assume" in doc
+        assert "do NOT access" in doc
 
     def test_as_tool_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         doc = tk.as_tool().__doc__
         assert "chain between" in doc.lower()
-        assert "Do NOT assume" not in doc
+        assert "do NOT access" not in doc
 
     def test_tool_schema_no_chain_when_disabled(self):
         tk = _make_toolkit(assist_tool_chaining=False)
         desc = tk.tool_schema()["function"]["description"]
         assert "chain between" not in desc.lower()
-        assert "Do NOT assume" in desc
+        assert "do NOT access" in desc
 
     def test_tool_schema_chains_when_enabled(self):
         tk = _make_toolkit(assist_tool_chaining=True)
         desc = tk.tool_schema()["function"]["description"]
         assert "chain between" in desc.lower()
-        assert "Do NOT assume" not in desc
+        assert "do NOT access" not in desc
 
 
 # ── Do-not-import-tools tests ────────────────────────────────────────
@@ -705,3 +706,166 @@ class TestSandboxBackend:
         tk = Toolkit([get_weather], sandbox=recorder, timeout=42.0)
         tk.execute_sync('print("hi")', validate=False)
         assert recorder.calls[0]["timeout"] == 42.0
+
+
+# ── Error hint tests ──────────────────────────────────────────────────
+
+
+class TestErrorHint:
+    """Error recovery guidance in prompts and error responses."""
+
+    # ── Default error hint in all four surfaces ──
+
+    def test_prompt_includes_error_recovery(self):
+        tk = _make_toolkit()
+        prompt = tk.prompt()
+        assert "error" in prompt.lower()
+        assert "try again" in prompt.lower()
+
+    def test_tool_prompt_includes_error_recovery(self):
+        tk = _make_toolkit()
+        tp = tk.tool_prompt()
+        assert "error" in tp.lower()
+        assert "try again" in tp.lower()
+
+    def test_as_tool_docstring_includes_error_recovery(self):
+        tk = _make_toolkit()
+        doc = tk.as_tool().__doc__
+        assert "error" in doc.lower()
+        assert "try again" in doc.lower()
+
+    def test_tool_schema_includes_error_recovery(self):
+        tk = _make_toolkit()
+        desc = tk.tool_schema()["function"]["description"]
+        assert "error" in desc.lower()
+        assert "try again" in desc.lower()
+
+    # ── Custom error hint ──
+
+    def test_custom_error_hint_in_all_surfaces(self):
+        tk = _make_toolkit(error_hint="Custom recovery hint")
+        assert "Custom recovery hint" in tk.prompt()
+        assert "Custom recovery hint" in tk.tool_prompt()
+        assert "Custom recovery hint" in tk.as_tool().__doc__
+        assert "Custom recovery hint" in tk.tool_schema()["function"]["description"]
+
+    def test_empty_error_hint_disables(self):
+        tk = _make_toolkit(error_hint="")
+        assert "try again" not in tk.prompt().lower()
+        assert "try again" not in tk.tool_prompt().lower()
+        assert "try again" not in tk.as_tool().__doc__.lower()
+        assert "try again" not in tk.tool_schema()["function"]["description"].lower()
+        # No prefix on error responses either
+        fn = tk.as_tool_sync()
+        result = fn("x = undefined_var")
+        assert not result.startswith("ERROR:")
+
+    # ── Error prefix in tool responses ──
+
+    def test_as_tool_sync_error_prefix(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool_sync()
+        result = fn("x = undefined_var")
+        assert result.startswith("ERROR:")
+        assert "try again" in result.lower()
+        assert "NameError" in result
+
+    @pytest.mark.asyncio
+    async def test_as_tool_async_error_prefix(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool()
+        result = await fn("x = undefined_var")
+        assert result.startswith("ERROR:")
+        assert "try again" in result.lower()
+        assert "NameError" in result
+
+    def test_as_tool_sync_success_no_prefix(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool_sync()
+        result = fn('print("hi")')
+        assert not result.startswith("ERROR:")
+        assert "hi" in result
+
+
+# ── Non-chaining code pattern tests ──────────────────────────────────
+
+
+class TestNonChainingNoAccessPattern:
+    """Non-chaining surfaces should forbid accessing return values and show print pattern."""
+
+    def test_prompt_has_no_access_when_disabled(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        prompt = tk.prompt()
+        assert "do NOT access" in prompt
+        assert "print(tool_a(...))" in prompt
+
+    def test_tool_prompt_has_no_access_when_disabled(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        tp = tk.tool_prompt()
+        assert "do NOT access" in tp
+        assert "print(tool_a(...))" in tp
+
+    def test_as_tool_has_no_access_when_disabled(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        doc = tk.as_tool().__doc__
+        assert "do NOT access" in doc
+        assert "print(tool_a(...))" in doc
+
+    def test_tool_schema_has_no_access_when_disabled(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        desc = tk.tool_schema()["function"]["description"]
+        assert "do NOT access" in desc
+        assert "print(tool_a(...))" in desc
+
+    def test_no_access_absent_when_enabled(self):
+        tk = _make_toolkit(assist_tool_chaining=True)
+        assert "do NOT access" not in tk.prompt()
+        assert "do NOT access" not in tk.tool_prompt()
+        assert "do NOT access" not in tk.as_tool().__doc__
+        assert "do NOT access" not in tk.tool_schema()["function"]["description"]
+
+
+# ── Empty output safety net tests ─────────────────────────────────────
+
+
+class TestEmptyOutputSafetyNet:
+    """When chaining=False, tools called but nothing printed → corrective message."""
+
+    def test_sync_tools_called_no_print(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        fn = tk.as_tool_sync()
+        result = fn('get_weather("SF")')
+        assert "No output captured" in result
+
+    @pytest.mark.asyncio
+    async def test_async_tools_called_no_print(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        fn = tk.as_tool()
+        result = await fn('get_weather("SF")')
+        assert "No output captured" in result
+
+    def test_chaining_enabled_no_warning(self):
+        tk = _make_toolkit(assist_tool_chaining=True)
+        fn = tk.as_tool_sync()
+        result = fn('get_weather("SF")')
+        assert "No output captured" not in result
+
+    def test_print_present_no_warning(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        fn = tk.as_tool_sync()
+        result = fn('print(get_weather("SF"))')
+        assert "No output captured" not in result
+        assert "temp" in result
+
+    def test_no_tools_called_no_warning(self):
+        tk = _make_toolkit(assist_tool_chaining=False)
+        fn = tk.as_tool_sync()
+        result = fn('x = 1 + 1')
+        assert "No output captured" not in result
+
+    def test_print_in_code_but_empty_output_no_warning(self):
+        """If code contains print() but output is empty, don't fire safety net."""
+        tk = _make_toolkit(assist_tool_chaining=False)
+        fn = tk.as_tool_sync()
+        result = fn('w = get_weather("SF")\nprint(end="")')
+        assert "No output captured" not in result

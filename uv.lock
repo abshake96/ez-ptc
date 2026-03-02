@@ -649,7 +649,7 @@ wheels = [
 
 [[package]]
 name = "ez-ptc"
-version = "0.1.4"
+version = "0.2.2"
 source = { editable = "." }
 
 [package.optional-dependencies]

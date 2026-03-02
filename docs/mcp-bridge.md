@@ -173,7 +173,7 @@ toolkit = await Toolkit.from_mcp(
 )
 ```
 
-All `Toolkit` constructor kwargs (`preamble`, `postamble`, `assist_tool_chaining`, `timeout`, `sandbox`) are passed through.
+All `Toolkit` constructor kwargs (`preamble`, `postamble`, `assist_tool_chaining`, `timeout`, `sandbox`, `error_hint`) are passed through.
 
 ## Prompt templates
 

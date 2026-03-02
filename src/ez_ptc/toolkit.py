@@ -51,17 +51,23 @@ def _build_postamble(assist_tool_chaining: bool) -> str:
         )
     else:
         lines.append(
-            "Call all the tools you need and print() all results in a single code block.\n"
-        )
-        lines.append(
-            "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys."
+            "Tool return schemas are not documented — do NOT access, index, or filter return values.\n"
+            "Only print() each raw result: print(tool_a(...)), print(tool_b(...))."
         )
     lines += [
-        "For parallel execution, use asyncio:",
+        "For parallel execution, use asyncio (tools are sync — use asyncio.to_thread):",
         "    async def main():",
         "        a, b = await asyncio.gather(asyncio.to_thread(tool1, ...), asyncio.to_thread(tool2, ...))",
         "        print(a, b)",
         "    asyncio.run(main())",
+        "To group multiple tool calls per task, use a regular (not async) wrapper:",
+        "    def process(x):",
+        "        return tool1(x), tool2(x)",
+        "    async def main():",
+        "        results = await asyncio.gather(*[asyncio.to_thread(process, x) for x in items])",
+        "        print(results)",
+        "    asyncio.run(main())",
+        "WARNING: Do NOT pass async functions to asyncio.to_thread — it only works with sync functions.",
         "",
         "Environment: json, math, re, asyncio are pre-imported. You can also import other standard library modules (collections, datetime, itertools, etc.).",
         "Restrictions: No file I/O, networking, or shell access (os, subprocess, socket, etc. are blocked).",
@@ -83,6 +89,8 @@ class Toolkit:
         → LLM calls meta-tool → ez-ptc executes → results
     """
 
+    _DEFAULT_ERROR_HINT = "If execution returns an error, analyze the traceback, fix your code, and try again."
+
     def __init__(
         self,
         tools: list[Tool],
@@ -91,6 +99,7 @@ class Toolkit:
         assist_tool_chaining: bool = False,
         timeout: float = 30.0,
         sandbox: SandboxBackend | None = None,
+        error_hint: str | None = None,
     ) -> None:
         for item in tools:
             if not isinstance(item, Tool):
@@ -110,6 +119,7 @@ class Toolkit:
         self._assist_tool_chaining = assist_tool_chaining
         self._timeout = timeout
         self._sandbox: SandboxBackend = sandbox or LocalSandbox()
+        self._custom_error_hint = error_hint
 
     def __iter__(self):
         return iter(self.tools)
@@ -124,10 +134,17 @@ class Toolkit:
         return _build_preamble(self._assist_tool_chaining)
 
     @property
+    def _error_hint(self) -> str:
+        if self._custom_error_hint is not None:
+            return self._custom_error_hint
+        return self._DEFAULT_ERROR_HINT
+
+    @property
     def _postamble(self) -> str:
-        if self._custom_postamble is not None:
-            return self._custom_postamble
-        return _build_postamble(self._assist_tool_chaining)
+        base = self._custom_postamble if self._custom_postamble is not None else _build_postamble(self._assist_tool_chaining)
+        if self._error_hint:
+            base += "\n" + self._error_hint
+        return base
 
     def _return_schema_text(self, tool: Tool) -> str | None:
         """Return formatted return schema string for a tool, or None."""
@@ -233,12 +250,14 @@ class Toolkit:
             )
         else:
             parts.append(
-                "Call all the tools you need and print() all results in a single code block.\n"
+                "Tool return schemas are not documented — do NOT access, index, or filter return values.\n"
+                "Only print() each raw result: print(tool_a(...)), print(tool_b(...))."
             )
-            parts.append(
-                "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly instead of accessing specific keys."
-            )
-        parts.append("For parallel execution, use asyncio.gather with asyncio.to_thread.")
+        parts.append(
+            "For parallel execution, use asyncio.gather with asyncio.to_thread (tools are sync functions).\n"
+            "To group multiple calls, use a regular def wrapper (not async): def process(x): return tool1(x), tool2(x)\n"
+            "Do NOT pass async functions to asyncio.to_thread — it only works with sync functions."
+        )
         parts.append(
             "json, math, re, asyncio are pre-imported. You can also import other safe stdlib modules "
             "(collections, datetime, itertools, etc.)."
@@ -246,6 +265,8 @@ class Toolkit:
         parts.append(
             "No file I/O, networking, or shell access (os, subprocess, socket, etc. are blocked)."
         )
+        if self._error_hint:
+            parts.append(self._error_hint)
         parts.append("ALWAYS print() the final result you want to return.")
         return "\n".join(parts)
 
@@ -272,16 +293,18 @@ class Toolkit:
             usage_hint = "    Store results in variables to chain between function calls."
         else:
             usage_hint = (
-                "    Call all the tools you need and print() all results in a single code block.\n"
-                "    CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly."
+                "    Tool return schemas are not documented — do NOT access, index, or filter return values.\n"
+                "    Only print() each raw result: print(tool_a(...)), print(tool_b(...))."
             )
 
+        error_line = f"    {self._error_hint}\n" if self._error_hint else ""
         docstring = (
             f"Execute Python code by passing it in the `code` argument.\n"
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make separate calls.\n"
             f"Inside the code, the following functions are already available — do NOT import them:\n\n"
             f"{tools_listing}\n\n"
             f"{usage_hint}\n"
+            f"{error_line}"
             f"    ALWAYS print() the final result.\n\n"
             f"    Args:\n"
             f"        code: Python code to execute"
@@ -291,6 +314,18 @@ class Toolkit:
 
         async def execute_tools(code: str) -> str:
             result = await toolkit_ref.execute(code)
+            if not result.success and toolkit_ref._error_hint:
+                return f"ERROR: {toolkit_ref._error_hint}\n\n{result.to_string()}"
+            if (
+                not result.output
+                and result.tool_calls
+                and not toolkit_ref._assist_tool_chaining
+                and "print(" not in code
+            ):
+                return (
+                    "[No output captured. You called tool(s) but did not print() the results. "
+                    "Rewrite the code to print() each result immediately: print(tool_name(...))]"
+                )
             return result.to_string()
 
         execute_tools.__name__ = "execute_tools"
@@ -314,6 +349,18 @@ class Toolkit:
 
         def execute_tools(code: str) -> str:
             result = toolkit_ref.execute_sync(code)
+            if not result.success and toolkit_ref._error_hint:
+                return f"ERROR: {toolkit_ref._error_hint}\n\n{result.to_string()}"
+            if (
+                not result.output
+                and result.tool_calls
+                and not toolkit_ref._assist_tool_chaining
+                and "print(" not in code
+            ):
+                return (
+                    "[No output captured. You called tool(s) but did not print() the results. "
+                    "Rewrite the code to print() each result immediately: print(tool_name(...))]"
+                )
             return result.to_string()
 
         execute_tools.__name__ = async_fn.__name__
@@ -344,8 +391,8 @@ class Toolkit:
             usage_hint = "Store results in variables to chain between function calls. print() the final result."
         else:
             usage_hint = (
-                "Call all the tools you need and print() all results in a single code block.\n"
-                "CAUTION: Do NOT assume the structure or key names of tool return values — print() raw results directly."
+                "Tool return schemas are not documented — do NOT access, index, or filter return values.\n"
+                "Only print() each raw result: print(tool_a(...)), print(tool_b(...))."
             )
 
         description = (
@@ -354,6 +401,8 @@ class Toolkit:
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make multiple separate calls.\n"
             f"{usage_hint}"
         )
+        if self._error_hint:
+            description += "\n" + self._error_hint
 
         code_desc = "Python code to execute. The listed functions are available as globals."
 

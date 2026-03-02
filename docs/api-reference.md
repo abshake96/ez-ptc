@@ -85,6 +85,7 @@ Toolkit(
     assist_tool_chaining: bool = False,
     timeout: float = 30.0,
     sandbox: SandboxBackend | None = None,
+    error_hint: str | None = None,
 )
 ```
 
@@ -96,6 +97,7 @@ Toolkit(
 | `assist_tool_chaining` | `bool` | `False` | When `True`, appends return schema info to tool listings |
 | `timeout` | `float` | `30.0` | Default execution timeout in seconds |
 | `sandbox` | `SandboxBackend \| None` | `None` | Custom sandbox backend. Uses `LocalSandbox` if `None`. |
+| `error_hint` | `str \| None` | `None` | Custom error recovery guidance shown in prompts and prefixed to error responses from `as_tool()`. Default (`None`) uses built-in hint. Set to `""` to disable. |
 
 ### Class Methods
 
@@ -178,6 +180,8 @@ The returned function:
 - Returns `str` — stdout on success, stderr/error on failure
 - Has `__name__`, `__doc__`, and `__annotations__` set for framework introspection
 - When `assist_tool_chaining=True`, the docstring includes return schema info
+- **Error prefix:** On failure, if `error_hint` is set, the return string is prefixed with `ERROR: <error_hint>\n\n` followed by the traceback
+- **Empty-output safety net:** When `assist_tool_chaining=False`, if tools were called but nothing was printed (and no `print(` appears in the code), returns a corrective message: `[No output captured. You called tool(s) but did not print() the results...]`
 
 ```python
 execute_fn = toolkit.as_tool()
@@ -186,7 +190,7 @@ output = await execute_fn('print("hello")')  # "hello\n"
 
 #### `as_tool_sync() -> Callable[[str], str]`
 
-Return a sync callable function. Same behavior as `as_tool()` but synchronous.
+Return a sync callable function. Same behavior as `as_tool()` but synchronous, including the error prefix and empty-output safety net.
 
 ```python
 execute_fn = toolkit.as_tool_sync()
@@ -265,7 +269,7 @@ Return a string optimized for token efficiency.
 - **On success:** returns stdout, or `repr(return_value)` if stdout is empty, or `""`.
 - **On failure:** returns stderr/traceback, or the error message.
 
-This is what `as_tool()` returns to the LLM.
+This is the base of what `as_tool()` returns to the LLM. Note that `as_tool()` adds error prefix and empty-output safety net logic on top of `to_string()` — see `as_tool()` above.
 
 ---
 

@@ -254,7 +254,47 @@ fn("print('hi')")  # "hi\n"
 
 The function accepts a `code` string, executes it with all toolkit tools available, and returns:
 - **On success:** captured stdout, or repr of last expression if no output
-- **On failure:** stderr/traceback for LLM self-correction
+- **On failure:** `ERROR: <error_hint>\n\n<traceback>` (when `error_hint` is set) for LLM self-correction
+
+## Error hints
+
+By default, when code execution fails, `as_tool()` / `as_tool_sync()` prefix the error output with recovery guidance:
+
+```
+ERROR: If execution returns an error, analyze the traceback, fix your code, and try again.
+
+Traceback (most recent call last):
+  ...
+```
+
+This default `error_hint` also appears in all prompt surfaces (`prompt()`, `tool_prompt()`, `as_tool()` docstring, `tool_schema()` description) so the LLM is aware of error recovery expectations before errors occur.
+
+Customize or disable it:
+
+```python
+# Custom hint
+toolkit = Toolkit(tools, error_hint="On error, simplify your code and try again.")
+
+# Disable entirely — no hint in prompts or error prefixes
+toolkit = Toolkit(tools, error_hint="")
+```
+
+## Empty-output safety net
+
+When `assist_tool_chaining=False` (the default), the LLM is instructed to `print()` all results. However, LLMs sometimes forget to print. When `as_tool()` / `as_tool_sync()` detect this pattern:
+
+1. The code produced no stdout
+2. At least one tool was called
+3. `assist_tool_chaining` is off
+4. The code contains no `print(` call
+
+...they return a corrective message instead of empty output:
+
+```
+[No output captured. You called tool(s) but did not print() the results. Rewrite the code to print() each result immediately: print(tool_name(...))]
+```
+
+This nudges the LLM to retry with proper `print()` calls. When `assist_tool_chaining=True`, this safety net is disabled because the LLM is expected to chain results in variables rather than printing them.
 
 ## See also
 

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.2] - 2026-03-02
+
+### Added
+
+- **Error hint system**: `Toolkit(error_hint=...)` customizes error recovery guidance in all prompt surfaces and tool responses; default hint tells the LLM to analyze tracebacks and retry; set to `""` to disable
+- **Empty-output safety net**: `as_tool()` / `as_tool_sync()` detect when tools were called without `print()` (non-chaining mode only) and return a corrective message instead of empty string
+- **Non-chaining prompt overhaul**: Replaced vague "don't assume key names" text with explicit "do NOT access, index, or filter return values" + `print(tool_a(...))` pattern across all four prompt surfaces — directly prevents LLMs from guessing return schemas
+- **Asyncio prompt fix**: Added sync wrapper pattern for grouping multiple tool calls + explicit warning that `asyncio.to_thread` only works with sync functions — prevents LLMs from passing `async def` to `to_thread` (which silently returns coroutine objects)
+
 ## [0.2.1] - 2026-03-02
 
 ### Fixed

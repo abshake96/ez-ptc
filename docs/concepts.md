@@ -82,6 +82,7 @@ toolkit = Toolkit(
     assist_tool_chaining=False,  # Optional: enable return schema hints
     timeout=30.0,               # Optional: execution timeout in seconds
     sandbox=None,               # Optional: custom SandboxBackend
+    error_hint=None,            # Optional: custom error recovery hint (None=default, ""=disable)
 )
 ```
 

@@ -158,6 +158,7 @@ When code raises an exception:
 - `result.error` contains the exception type and message
 - `result.error_output` contains the full traceback
 - The traceback is returned to the LLM (via `to_string()`) for self-correction
+- In tool mode (`as_tool()` / `as_tool_sync()`), the error output is prefixed with `ERROR: <error_hint>` to guide the LLM toward recovery. The default hint is: *"If execution returns an error, analyze the traceback, fix your code, and try again."* Customize via `Toolkit(error_hint="...")` or disable with `error_hint=""`.
 
 ## Tool call logging
 

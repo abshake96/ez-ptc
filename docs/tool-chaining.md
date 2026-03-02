@@ -10,8 +10,9 @@ The `assist_tool_chaining` feature adds opt-in return schema documentation so th
 toolkit = Toolkit([get_weather, search_products], assist_tool_chaining=True)
 ```
 
-When `False` (default): no change to current behavior.
-When `True`: return schema info is appended to tool listings in `prompt()`, `as_tool()`, and `tool_schema()`.
+When `False` (default): the LLM is told not to access, index, or filter return values and to only `print()` raw results. This is the safe default when return types are not documented.
+
+When `True`: return schema info is appended to tool listings in `prompt()`, `as_tool()`, and `tool_schema()`, and the LLM is told to chain results via variables.
 
 ## Providing return schemas
 
