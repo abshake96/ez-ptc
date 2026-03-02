@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.1] - 2026-03-02
+
+### Fixed
+
+- **Security**: Remove `io` from safe modules (prevented filesystem bypass via `io.open()`)
+- **Security**: Block unauthorized urllib submodule imports (e.g. `from urllib import request`)
+- **Security**: Use `inspect.isawaitable` instead of `asyncio.iscoroutine` for broader awaitable coverage
+- **Security**: Use `math.ceil` for `signal.alarm` timeout to prevent premature truncation
+- Detect duplicate tool names in `Toolkit` constructor (raises `ValueError`)
+- Fix `_body_has_exit` validator to properly recurse into compound statements (`if`/`for`/`while`)
+- Fix variable shadowing in MCP tool wrapper
+- Fix `read_file` → `read_text_file` in MCP chaining example
+- Fix async-shown-as-sync across all documentation (`execute()` → `execute_sync()`, `as_tool()` → `as_tool_sync()` in sync contexts)
+- Fix 7 broken example file paths in `docs/examples.md`
+- Add missing v0.2.0 APIs to `docs/api-reference.md` (`SandboxBackend`, `LocalSandbox`, `validate_code`, `ValidationResult`, `timeout`/`sandbox` params, `return_schemas`)
+- Add AST validation section to `docs/security.md`
+- Document `ez-ptc[pydantic]` optional dependency
+
 ## [0.2.0] - 2026-03-02
 
 ### Added
