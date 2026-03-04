@@ -130,8 +130,8 @@ Resource templates with URI variables become parameterized tools:
 
 ```python
 # MCP template: "User Profile" at users/{user_id}/profile
-# Becomes: read_user_profile(user_id: str)
-profile = read_user_profile(user_id="42")
+# Becomes: query_user_profile(user_id: str)  (templates use query_ prefix)
+profile = query_user_profile(user_id="42")
 print(profile["name"])
 ```
 
@@ -265,7 +265,7 @@ doc = get_document(doc_id=results[0]["title"])
 print(doc["content"])
 ```
 
-`return_schemas` also works on resource tool names (e.g. `"read_config"`, `"read_user_profile"`).
+`return_schemas` also works on resource tool names (e.g. `"read_config"` for static resources, `"query_user_profile"` for templates).
 
 The lower-level `tools_from_mcp()` accepts the same `return_schemas` parameter:
 

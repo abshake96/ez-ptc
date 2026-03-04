@@ -252,11 +252,24 @@ async def tools_from_mcp(
         List of ez-ptc Tool objects ready for use in a Toolkit.
     """
     tools: list[Tool] = []
+    seen_names: set[str] = set()
+
+    def _unique_name(candidate: str) -> str:
+        """Return candidate, appending _2, _3, ... if already seen."""
+        if candidate not in seen_names:
+            seen_names.add(candidate)
+            return candidate
+        i = 2
+        while f"{candidate}_{i}" in seen_names:
+            i += 1
+        unique = f"{candidate}_{i}"
+        seen_names.add(unique)
+        return unique
 
     # ── Wrap MCP tools ──
     list_tools_result = await session.list_tools()
     for mcp_tool in list_tools_result.tools:
-        name = mcp_tool.name
+        name = _unique_name(mcp_tool.name)
 
         input_schema = mcp_tool.inputSchema
         param_names = list((input_schema or {}).get("properties", {}).keys())
@@ -293,7 +306,7 @@ async def tools_from_mcp(
     if include_resources:
         list_resources_result = await session.list_resources()
         for resource in list_resources_result.resources:
-            resource_name = "read_" + _sanitize_name(resource.name)
+            resource_name = _unique_name("read_" + _sanitize_name(resource.name))
             desc = resource.description or f"Read resource: {resource.name}"
             if resource.mimeType:
                 desc += f" (MIME: {resource.mimeType})"
@@ -318,7 +331,7 @@ async def tools_from_mcp(
         # ── Wrap resource templates ──
         list_templates_result = await session.list_resource_templates()
         for template in list_templates_result.resourceTemplates:
-            template_name = "read_" + _sanitize_name(template.name)
+            template_name = _unique_name("query_" + _sanitize_name(template.name))
             param_names = _parse_uri_template(template.uriTemplate)
             desc = template.description or f"Read resource: {template.name}"
             if template.mimeType:

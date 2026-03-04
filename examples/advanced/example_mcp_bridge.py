@@ -102,7 +102,7 @@ for r in results:
         assist_tool_chaining=True,
     )
     print(f"\nTotal tools: {len(toolkit_mixed)}")
-    print(f"  MCP tools: search, get_document, read_system_config, read_user_profile")
+    print(f"  MCP tools: search, get_document, read_system_config, query_user_profile")
     print(f"  Local tools: calculate, format_markdown")
 
     code = '''
@@ -123,7 +123,7 @@ config = read_system_config()
 print(f"System version: {config['version']}")
 print(f"Max workers: {config['max_workers']}")
 
-profile = read_user_profile(user_id="42")
+profile = query_user_profile(user_id="42")
 print(f"User: {profile['name']} ({profile['role']})")
 '''
     result = await toolkit.execute(code)

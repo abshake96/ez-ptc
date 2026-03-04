@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.1] - 2026-03-04
+
+### Fixed
+
+- **MCP resource template naming**: Resource templates now use `query_` prefix (e.g. `query_user_profile`) instead of `read_` to distinguish from static resources (`read_config`). Prevents name collisions when a static resource and template share the same base name.
+- **MCP name deduplication**: `tools_from_mcp()` now tracks seen names across tools, resources, and templates — appends `_2`, `_3`, etc. on collision instead of raising `ValueError`.
+
 ## [0.3.0] - 2026-03-04
 
 ### Added

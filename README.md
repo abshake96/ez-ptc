@@ -216,7 +216,7 @@ async with stdio_client(server) as (read, write):
 What gets wrapped:
 - **MCP Tools** -- wrapped as `Tool` objects with full signature and positional arg support
 - **Static Resources** -- wrapped as zero-arg tools (e.g. `read_config()`)
-- **Resource Templates** -- wrapped as parameterized tools (e.g. `read_user_profile(user_id="42")`)
+- **Resource Templates** -- wrapped as parameterized tools (e.g. `query_user_profile(user_id="42")`)
 - **Prompts** -- not tools; accessed via `get_mcp_prompt()` for system prompt injection
 
 Mix MCP tools with local `@ez_tool` functions:

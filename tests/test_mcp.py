@@ -418,9 +418,9 @@ class TestReturnSchemas:
         }
         tools = await tools_from_mcp(
             session,
-            return_schemas={"read_user_profile": user_schema},
+            return_schemas={"query_user_profile": user_schema},
         )
-        template_tool = [t for t in tools if t.name == "read_user_profile"][0]
+        template_tool = [t for t in tools if t.name == "query_user_profile"][0]
         assert template_tool.return_schema == user_schema
 
     async def test_toolkit_from_mcp_chaining_with_return_schemas(self):
@@ -634,12 +634,12 @@ class TestResourceWrapping:
         )
         tools = await tools_from_mcp(session)
 
-        template_tools = [t for t in tools if t.name.startswith("read_")]
+        template_tools = [t for t in tools if t.name.startswith("query_")]
         assert len(template_tools) == 1
         t = template_tools[0]
-        assert t.name == "read_user_profile"
+        assert t.name == "query_user_profile"
         assert "user_id" in t.parameters["properties"]
-        assert t.signature == "read_user_profile(user_id: str)"
+        assert t.signature == "query_user_profile(user_id: str)"
 
         result = await t.fn(user_id="42")
         assert result == {"name": "Alice"}
@@ -659,7 +659,7 @@ class TestResourceWrapping:
         )
         tools = await tools_from_mcp(session)
 
-        t = [t for t in tools if t.name == "read_repo_file"][0]
+        t = [t for t in tools if t.name == "query_repo_file"][0]
         await t.fn("alice", "myrepo")
         session.read_resource.assert_called_once_with("repos/alice/myrepo/file")
 
