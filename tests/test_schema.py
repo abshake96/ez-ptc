@@ -344,3 +344,24 @@ def test_format_annotation_generics():
     assert _format_annotation(tuple[str, int]) == "tuple[str, int]"
     assert _format_annotation(frozenset[str]) == "frozenset[str]"
     assert _format_annotation(list[dict[str, int]]) == "list[dict[str, int]]"
+
+
+# ── is_async detection tests ─────────────────────────────────────────
+
+
+def test_sync_function_is_async_false():
+    def fn(x: str) -> str:
+        """Sync function."""
+        ...
+
+    schema = function_to_schema(fn)
+    assert schema["is_async"] is False
+
+
+def test_async_function_is_async_true():
+    async def fn(x: str) -> str:
+        """Async function."""
+        ...
+
+    schema = function_to_schema(fn)
+    assert schema["is_async"] is True

@@ -285,6 +285,7 @@ async def tools_from_mcp(
             fn=fn,
             signature=signature,
             return_schema=return_schema,
+            is_async=True,
         )
         tools.append(tool)
 
@@ -310,6 +311,7 @@ async def tools_from_mcp(
                 fn=fn,
                 signature=f"{resource_name}()",
                 return_schema=resource_return_schema,
+                is_async=True,
             )
             tools.append(tool)
 
@@ -340,6 +342,7 @@ async def tools_from_mcp(
                 fn=fn,
                 signature=signature,
                 return_schema=template_return_schema,
+                is_async=True,
             )
             tools.append(tool)
 

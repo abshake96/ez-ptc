@@ -513,3 +513,210 @@ asyncio.run(main())
     result = asyncio.run(_run_from_async())
     assert result.success, f"Failed with: {result.error}"
     assert "sunny" in result.output
+
+
+# ── Native async tool execution tests ─────────────────────────────────
+
+
+def _make_async_tools():
+    """Create test tools with async tools."""
+    from ez_ptc.tool import Tool
+
+    async def async_fetch(key: str) -> dict:
+        """Fetch data by key.
+
+        Args:
+            key: The key to fetch
+        """
+        return {"key": key, "value": 42}
+
+    @ez_tool
+    def sync_helper(x: int) -> int:
+        """Double a number.
+
+        Args:
+            x: Input number
+        """
+        return x * 2
+
+    from ez_ptc.schema import function_to_schema
+
+    schema = function_to_schema(async_fetch)
+    async_tool = Tool(
+        name=schema["name"],
+        description=schema["description"],
+        parameters=schema["parameters"],
+        fn=async_fetch,
+        signature=schema["signature"],
+        is_async=True,
+    )
+
+    return {"async_fetch": async_tool, "sync_helper": sync_helper}
+
+
+def test_async_tool_execution():
+    """Async tools should work via sync wrappers (no await needed)."""
+    tools = _make_async_tools()
+    code = 'result = async_fetch("test")\nprint(result)'
+    result = execute_code(code, tools)
+    assert result.success, f"Failed: {result.error}"
+    assert "value" in result.output
+    assert "42" in result.output
+
+
+def test_async_tool_with_parallel():
+    """parallel() should work with async tools."""
+    tools = _make_async_tools()
+    code = """
+a, b = parallel((async_fetch, "x"), (async_fetch, "y"))
+print(f"a={a['key']}, b={b['key']}")
+"""
+    result = execute_code(code, tools)
+    assert result.success, f"Failed: {result.error}"
+    assert "a=x" in result.output
+    assert "b=y" in result.output
+
+
+def test_mixed_sync_async_tools():
+    """Mixed sync + async tools should both work via sync wrappers."""
+    tools = _make_async_tools()
+    code = """
+fetched = async_fetch("hello")
+doubled = sync_helper(fetched["value"])
+print(f"fetched={fetched['key']}, doubled={doubled}")
+"""
+    result = execute_code(code, tools)
+    assert result.success, f"Failed: {result.error}"
+    assert "fetched=hello" in result.output
+    assert "doubled=84" in result.output
+
+
+def test_async_tool_return_value_capture():
+    """Last expression with async tool should be captured as return_value."""
+    tools = _make_async_tools()
+    code = 'async_fetch("test")'
+    result = execute_code(code, tools)
+    assert result.success, f"Failed: {result.error}"
+    assert result.return_value == {"key": "test", "value": 42}
+
+
+def test_all_sync_tools_unchanged():
+    """Sync tools should work normally."""
+    tools = _make_tools()
+    code = 'weather = get_weather("NYC")\nprint(weather["condition"])'
+    result = execute_code(code, tools)
+    assert result.success
+    assert "sunny" in result.output
+
+
+# ── parallel() helper tests ────────────────────────────────────────────
+
+
+def test_parallel_helper_basic():
+    """parallel() should run sync tools concurrently."""
+    tools = _make_tools()
+    code = """
+a, b = parallel((get_weather, "NYC"), (get_weather, "LA"))
+print(f"a={a['condition']}, b={b['condition']}")
+"""
+    result = execute_code(code, tools)
+    assert result.success, f"Failed: {result.error}"
+    assert "a=sunny" in result.output
+    assert "b=sunny" in result.output
+
+
+def test_parallel_with_async_tools():
+    """parallel() should work with async tools (resolved via sync wrappers)."""
+    tools = _make_async_tools()
+    code = """
+results = parallel((async_fetch, "a"), (async_fetch, "b"), (async_fetch, "c"))
+for r in results:
+    print(r["key"])
+"""
+    result = execute_code(code, tools)
+    assert result.success, f"Failed: {result.error}"
+    assert "a" in result.output
+    assert "b" in result.output
+    assert "c" in result.output
+
+
+def test_parallel_error_on_non_tuple():
+    """parallel() should give a clear error when called with non-tuples."""
+    tools = _make_async_tools()
+    code = 'parallel(async_fetch("x"))'
+    result = execute_code(code, tools)
+    assert not result.success
+    assert "tuple" in result.error.lower() or "Did you call" in result.error
+
+
+# ── Error enrichment tests ────────────────────────────────────────────
+
+
+def test_key_error_enrichment():
+    """KeyError should show available keys in the error output."""
+    tools = _make_tools()
+    code = """
+result = get_weather("NYC")
+print(result["mileage"])
+"""
+    result = execute_code(code, tools)
+    assert not result.success
+    assert "KeyError" in result.error
+    assert "Hint" in result.error_output
+    assert "temp" in result.error_output or "condition" in result.error_output
+
+
+def test_key_error_enrichment_shows_correct_keys():
+    """KeyError hint should show the dict's actual keys."""
+    @ez_tool
+    def get_specs(car_id: str) -> dict:
+        """Get car specs.
+
+        Args:
+            car_id: Car ID
+        """
+        return {"car_id": car_id, "kmpl": 16.8, "fuel_type": "diesel"}
+
+    tools = {"get_specs": get_specs}
+    code = """
+r = get_specs("x")
+print(r["mileage"])
+"""
+    result = execute_code(code, tools)
+    assert not result.success
+    assert "kmpl" in result.error_output
+
+
+def test_attribute_error_enrichment():
+    """AttributeError on a dict should hint about bracket syntax."""
+    tools = _make_tools()
+    code = """
+result = get_weather("NYC")
+print(result.temp)
+"""
+    result = execute_code(code, tools)
+    assert not result.success
+    assert "AttributeError" in result.error
+    assert "dict" in result.error_output
+    assert "temp" in result.error_output or "condition" in result.error_output
+
+
+def test_no_enrichment_for_non_llm_errors():
+    """Errors from inside tool functions should NOT be enriched."""
+    @ez_tool
+    def bad_tool(x: str) -> dict:
+        """Fails internally.
+
+        Args:
+            x: Input
+        """
+        d = {"a": 1}
+        return d["missing"]
+
+    tools = {"bad_tool": bad_tool}
+    code = 'bad_tool("test")'
+    result = execute_code(code, tools)
+    assert not result.success
+    assert "KeyError" in result.error
+    # Should NOT have enrichment hint since error is from tool internal code
+    assert "Hint" not in result.error_output

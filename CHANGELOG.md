@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] - 2026-03-03
+
+### Added
+
+- **Native async tool support**: Async tools (`async def`) are automatically detected via `Tool.is_async`. When any tool is async, LLM code runs in an async context — `await` works natively, no more `asyncio.to_thread` gymnastics. Prompts show `async def` prefix for async tools and guide the LLM to use `await`/`asyncio.gather` patterns.
+- **Error enrichment**: On `KeyError`, error output now shows available dict keys in scope. On `AttributeError` against a dict, hints to use `['key']` bracket syntax. Only enriches errors from LLM code, not tool internals. Enables LLM self-correction in 1 retry instead of 3+.
+- **`allow_await` validator param**: `validate_code()` accepts `allow_await=True` to permit `await` syntax in pre-flight AST validation (used automatically when toolkit has async tools).
+
+### Changed
+
+- All four prompt surfaces (`prompt()`, `tool_prompt()`, `as_tool()`, `tool_schema()`) now prefix async tools with `async def`/`async ` and show simplified await-based patterns instead of `asyncio.to_thread` when async tools are present
+- `execute_code()` accepts `has_async_tools` param — when True, wraps LLM code in `async def` and runs with `asyncio.run()`
+- `LocalSandbox.execute()` auto-detects async tools and passes `has_async_tools` to executor
+- MCP tools, resources, and resource templates are now created with `is_async=True` (they were always async internally)
+
 ## [0.2.2] - 2026-03-02
 
 ### Added

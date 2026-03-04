@@ -31,4 +31,6 @@ class LocalSandbox:
         from .executor import execute_code
 
         loop = asyncio.get_running_loop()
-        return await asyncio.to_thread(execute_code, code, tools, timeout, loop)
+        return await asyncio.to_thread(
+            execute_code, code, tools, timeout, loop, False
+        )

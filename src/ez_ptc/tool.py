@@ -28,6 +28,7 @@ class Tool:
     fn: Callable
     signature: str
     return_schema: dict[str, Any] | None = None
+    is_async: bool = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.fn(*args, **kwargs)
@@ -67,6 +68,7 @@ def ez_tool(
             fn=f,
             signature=schema["signature"],
             return_schema=rs,
+            is_async=schema.get("is_async", False),
         )
         functools.update_wrapper(tool, f)
         return tool

@@ -200,6 +200,46 @@ class TestExcessiveResources:
 # ── Integration tests ─────────────────────────────────────────────────
 
 
+# ── allow_await tests ─────────────────────────────────────────────────
+
+
+class TestPreInjectedHelpers:
+    def test_parallel_not_flagged_as_unknown(self):
+        """parallel() is pre-injected and should not trigger unknown function warning."""
+        vr = validate_code('parallel((tool1, "x"), (tool2, "y"))', {"tool1", "tool2"})
+        assert not any("parallel" in w for w in vr.warnings)
+
+
+class TestAllowAwait:
+    def test_await_parses_at_module_level(self):
+        """Python 3.11+ allows await at module level — this is valid syntax."""
+        code = "result = await some_tool('x')"
+        vr = validate_code(code, {"some_tool"})
+        assert vr.is_safe  # No syntax error
+
+    def test_await_allowed_when_enabled(self):
+        code = "result = await some_tool('x')\nprint(result)"
+        vr = validate_code(code, {"some_tool"}, allow_await=True)
+        assert vr.is_safe
+
+    def test_await_with_gather(self):
+        code = "a, b = await asyncio.gather(tool1('x'), tool2('y'))"
+        vr = validate_code(code, {"tool1", "tool2"}, allow_await=True)
+        assert vr.is_safe
+
+    def test_dangerous_attrs_still_caught_with_await(self):
+        code = "result = await some_tool('x')\nresult.__globals__"
+        vr = validate_code(code, {"some_tool"}, allow_await=True)
+        assert not vr.is_safe
+        assert any("__globals__" in e for e in vr.errors)
+
+    def test_tool_imports_still_caught_with_await(self):
+        code = "import some_tool\nresult = await some_tool('x')"
+        vr = validate_code(code, {"some_tool"}, allow_await=True)
+        assert not vr.is_safe
+        assert any("some_tool" in e for e in vr.errors)
+
+
 class TestIntegration:
     def test_valid_code(self):
         code = """

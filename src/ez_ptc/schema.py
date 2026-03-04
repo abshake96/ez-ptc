@@ -417,6 +417,7 @@ def function_to_schema(fn: Callable) -> dict[str, Any]:
             "properties": properties,
         },
         "signature": signature,
+        "is_async": inspect.iscoroutinefunction(fn),
     }
 
     if required:

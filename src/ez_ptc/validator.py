@@ -123,8 +123,13 @@ _SAFE_BUILTIN_NAMES = frozenset(
 # Modules pre-injected into the sandbox namespace (available without import).
 _PRE_INJECTED_MODULES = frozenset({"json", "asyncio", "math", "re"})
 
+# Helper functions pre-injected into the sandbox namespace.
+_PRE_INJECTED_HELPERS = frozenset({"parallel"})
 
-def validate_code(code: str, tool_names: set[str]) -> ValidationResult:
+
+def validate_code(
+    code: str, tool_names: set[str], *, allow_await: bool = False
+) -> ValidationResult:
     """Validate LLM-generated code before execution.
 
     Runs lightweight AST checks to catch common LLM mistakes.
@@ -133,17 +138,32 @@ def validate_code(code: str, tool_names: set[str]) -> ValidationResult:
     Args:
         code: Python source code to validate.
         tool_names: Names of tools available in the sandbox.
+        allow_await: When True, wrap code in ``async def`` before parsing
+            so that ``await`` expressions are valid syntax.
 
     Returns:
         ValidationResult with any warnings and errors found.
     """
     result = ValidationResult()
 
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
-        result.errors.append(f"SyntaxError: {e}")
-        return result
+    if allow_await:
+        # Wrap in async def so await is valid syntax for the parser
+        indented = "\n".join("    " + line for line in code.splitlines())
+        wrapped = f"async def __validate__():\n{indented}"
+        try:
+            tree = ast.parse(wrapped)
+        except SyntaxError as e:
+            result.errors.append(f"SyntaxError: {e}")
+            return result
+        # Unwrap: the checks should see the body of the async def
+        async_func = tree.body[0]
+        tree = ast.Module(body=async_func.body, type_ignores=[])
+    else:
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as e:
+            result.errors.append(f"SyntaxError: {e}")
+            return result
 
     _check_tool_imports(tree, tool_names, result)
     _check_dangerous_attrs(tree, result)
@@ -194,7 +214,7 @@ def _check_unknown_calls(
 ) -> None:
     """Warn about calls to functions not in tools, builtins, or locally defined names."""
     locally_defined = _collect_locally_defined(tree)
-    known = tool_names | _SAFE_BUILTIN_NAMES | _PRE_INJECTED_MODULES | locally_defined
+    known = tool_names | _SAFE_BUILTIN_NAMES | _PRE_INJECTED_MODULES | _PRE_INJECTED_HELPERS | locally_defined
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):

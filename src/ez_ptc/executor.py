@@ -103,6 +103,125 @@ def _make_tool_wrapper(
     return wrapper
 
 
+def _make_async_tool_wrapper(
+    tool: Tool,
+    call_log: list[dict[str, Any]],
+) -> Callable[..., Any]:
+    """Create an async wrapper around an async tool function that logs calls."""
+
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        call_record: dict[str, Any] = {
+            "name": tool.name,
+            "args": args,
+            "kwargs": kwargs,
+        }
+
+        result = tool.fn(*args, **kwargs)
+
+        if inspect.isawaitable(result):
+            result = await result
+
+        call_record["result"] = result
+        call_log.append(call_record)
+        return result
+
+    wrapper.__name__ = tool.name
+    wrapper.__doc__ = tool.description
+    return wrapper
+
+
+def _make_parallel_helper() -> Callable[..., list[Any]]:
+    """Create a parallel() helper that runs (callable, *args) tuples concurrently."""
+    import concurrent.futures
+
+    def parallel(*specs: Any) -> list[Any]:
+        """Run multiple tool calls in parallel.
+
+        Each argument must be a tuple of (callable, arg1, arg2, ...).
+        Returns a list of results in the same order as the input tuples.
+        """
+        if not specs:
+            return []
+
+        for i, spec in enumerate(specs):
+            if not isinstance(spec, tuple):
+                if callable(spec):
+                    raise TypeError(
+                        f"Argument {i} is a callable, not a tuple. "
+                        f"Did you call the function instead of passing it? "
+                        f"Use: parallel((tool, arg), ...) not parallel(tool(arg), ...)"
+                    )
+                raise TypeError(
+                    f"Argument {i} must be a (callable, arg1, ...) tuple, got {type(spec).__name__}"
+                )
+            if len(spec) == 0 or not callable(spec[0]):
+                raise TypeError(
+                    f"Argument {i}: first element of each tuple must be a callable"
+                )
+
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            futures = []
+            for spec in specs:
+                fn, *args = spec
+                futures.append(pool.submit(fn, *args))
+            return [f.result() for f in futures]
+
+    return parallel
+
+
+def _enrich_error(e: Exception, stderr_capture: io.StringIO) -> None:
+    """Append available keys/attributes to error output for LLM self-correction."""
+    tb = e.__traceback__
+    if tb is None:
+        return
+
+    # Walk to innermost frame
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+
+    frame = tb.tb_frame
+    # Only enrich errors from LLM code, not from tool internals
+    if frame.f_code.co_filename not in ("<string>", "<llm_code>"):
+        return
+
+    if isinstance(e, KeyError) and e.args:
+        missing_key = e.args[0]
+        hints = []
+        for var_name, var_val in frame.f_locals.items():
+            if var_name.startswith("_"):
+                continue
+            if isinstance(var_val, dict) and missing_key not in var_val:
+                keys = list(var_val.keys())[:20]
+                hints.append(f"  {var_name}: {keys}")
+            if len(hints) >= 3:
+                break
+        if hints:
+            stderr_capture.write(
+                f"\nHint — available keys in scope:\n" + "\n".join(hints) + "\n"
+            )
+
+    elif isinstance(e, AttributeError):
+        hints = []
+        for var_name, var_val in frame.f_locals.items():
+            if var_name.startswith("_"):
+                continue
+            if isinstance(var_val, dict):
+                keys = list(var_val.keys())[:20]
+                hints.append(
+                    f"  {var_name} is a dict — use ['{keys[0]}'] syntax. Keys: {keys}"
+                    if keys
+                    else f"  {var_name} is an empty dict"
+                )
+            if len(hints) >= 3:
+                break
+        if hints:
+            stderr_capture.write(
+                f"\nHint — variable is a dict, use ['key'] syntax:\n"
+                + "\n".join(hints)
+                + "\n"
+            )
+
+
 # Safe builtins that LLM-generated code can use
 _SAFE_BUILTINS = {
     # Output
@@ -253,6 +372,7 @@ def execute_code(
     tools: dict[str, Tool],
     timeout: float = 30.0,
     loop: asyncio.AbstractEventLoop | None = None,
+    has_async_tools: bool = False,
 ) -> ExecutionResult:
     """Execute LLM-generated Python code with tools injected as globals.
 
@@ -261,6 +381,7 @@ def execute_code(
         tools: Dict mapping tool names to Tool objects
         timeout: Maximum execution time in seconds
         loop: Optional event loop for efficient async tool dispatch
+        has_async_tools: Deprecated — ignored. Kept for backward compatibility.
 
     Returns:
         ExecutionResult with captured output, tool calls, and error info
@@ -284,9 +405,13 @@ def execute_code(
     namespace["math"] = _math
     namespace["re"] = _re
 
-    # Add tool wrappers
+    # Add tool wrappers — always sync; _make_tool_wrapper handles async tools
+    # transparently via run_coroutine_threadsafe.
     for name, tool in tools.items():
         namespace[name] = _make_tool_wrapper(tool, call_log, loop=loop)
+
+    # Inject parallel() helper for concurrent tool calls
+    namespace["parallel"] = _make_parallel_helper()
 
     result = ExecutionResult()
 
@@ -331,6 +456,7 @@ def execute_code(
             # Capture traceback to stderr for LLM self-correction
             tb = traceback.format_exc()
             stderr_capture.write(tb)
+            _enrich_error(e, stderr_capture)
 
     # Detect if there's already a running event loop (e.g., inside an async framework
     # like Pydantic AI). If so, we must use thread-based execution so LLM code that

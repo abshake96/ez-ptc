@@ -55,21 +55,13 @@ def _build_postamble(assist_tool_chaining: bool) -> str:
             "Only print() each raw result: print(tool_a(...)), print(tool_b(...))."
         )
     lines += [
-        "For parallel execution, use asyncio (tools are sync — use asyncio.to_thread):",
-        "    async def main():",
-        "        a, b = await asyncio.gather(asyncio.to_thread(tool1, ...), asyncio.to_thread(tool2, ...))",
-        "        print(a, b)",
-        "    asyncio.run(main())",
-        "To group multiple tool calls per task, use a regular (not async) wrapper:",
-        "    def process(x):",
-        "        return tool1(x), tool2(x)",
-        "    async def main():",
-        "        results = await asyncio.gather(*[asyncio.to_thread(process, x) for x in items])",
-        "        print(results)",
-        "    asyncio.run(main())",
-        "WARNING: Do NOT pass async functions to asyncio.to_thread — it only works with sync functions.",
+        "For parallel execution, use the built-in parallel() helper:",
+        "    a, b = parallel((tool1, arg1), (tool2, arg1, arg2))",
+        "parallel() takes (callable, arg1, arg2, ...) tuples and runs them concurrently.",
+        "Returns a list of results in the same order as the input tuples.",
+        "Do NOT call the tools inside parallel() — pass the function and its arguments separately.",
         "",
-        "Environment: json, math, re, asyncio are pre-imported. You can also import other standard library modules (collections, datetime, itertools, etc.).",
+        "Environment: json, math, re are pre-imported. You can also import other standard library modules (collections, datetime, itertools, etc.).",
         "Restrictions: No file I/O, networking, or shell access (os, subprocess, socket, etc. are blocked).",
         "",
         "ALWAYS print() the final result you want to return.",
@@ -126,6 +118,10 @@ class Toolkit:
 
     def __len__(self) -> int:
         return len(self.tools)
+
+    @property
+    def _has_async_tools(self) -> bool:
+        return any(t.is_async for t in self.tools)
 
     @property
     def _preamble(self) -> str:
@@ -254,12 +250,12 @@ class Toolkit:
                 "Only print() each raw result: print(tool_a(...)), print(tool_b(...))."
             )
         parts.append(
-            "For parallel execution, use asyncio.gather with asyncio.to_thread (tools are sync functions).\n"
-            "To group multiple calls, use a regular def wrapper (not async): def process(x): return tool1(x), tool2(x)\n"
-            "Do NOT pass async functions to asyncio.to_thread — it only works with sync functions."
+            "For parallel execution, use the built-in parallel() helper: a, b = parallel((tool1, arg1), (tool2, arg1, arg2))\n"
+            "parallel() takes (callable, arg1, ...) tuples and runs them concurrently. Returns a list of results in order.\n"
+            "Do NOT call the tools inside parallel() — pass the function and its arguments separately."
         )
         parts.append(
-            "json, math, re, asyncio are pre-imported. You can also import other safe stdlib modules "
+            "json, math, re are pre-imported. You can also import other safe stdlib modules "
             "(collections, datetime, itertools, etc.)."
         )
         parts.append(
@@ -297,6 +293,10 @@ class Toolkit:
                 "    Only print() each raw result: print(tool_a(...)), print(tool_b(...))."
             )
 
+        parallel_hint = (
+            "    For parallel execution: a, b = parallel((tool1, arg1), (tool2, arg1, arg2))\n"
+            "    Do NOT call tools inside parallel() — pass the function and its arguments separately."
+        )
         error_line = f"    {self._error_hint}\n" if self._error_hint else ""
         docstring = (
             f"Execute Python code by passing it in the `code` argument.\n"
@@ -304,6 +304,7 @@ class Toolkit:
             f"Inside the code, the following functions are already available — do NOT import them:\n\n"
             f"{tools_listing}\n\n"
             f"{usage_hint}\n"
+            f"{parallel_hint}\n"
             f"{error_line}"
             f"    ALWAYS print() the final result.\n\n"
             f"    Args:\n"
@@ -399,7 +400,9 @@ class Toolkit:
             f"Execute Python code via the `code` argument. "
             f"Available functions inside the code (already available — do NOT import them):\n{tools_desc}\n\n"
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make multiple separate calls.\n"
-            f"{usage_hint}"
+            f"{usage_hint}\n"
+            f"For parallel execution: a, b = parallel((tool1, arg1), (tool2, arg1, arg2)). "
+            f"Do NOT call tools inside parallel() — pass the function and its arguments separately."
         )
         if self._error_hint:
             description += "\n" + self._error_hint
@@ -515,7 +518,9 @@ class Toolkit:
         effective_timeout = timeout if timeout is not None else self._timeout
 
         if validate:
-            vr = validate_code(code, set(self._tool_map.keys()))
+            vr = validate_code(
+                code, set(self._tool_map.keys()), allow_await=False
+            )
             if not vr.is_safe:
                 return ExecutionResult(
                     success=False,

@@ -108,7 +108,6 @@ class TestPrompt:
         tk = _make_toolkit()
         prompt = tk.prompt()
         assert "json" in prompt
-        assert "asyncio" in prompt
         assert "import" in prompt.lower()
 
     def test_default_prompt_mentions_restrictions(self):
@@ -119,8 +118,7 @@ class TestPrompt:
     def test_default_prompt_mentions_parallel(self):
         tk = _make_toolkit()
         prompt = tk.prompt()
-        assert "asyncio" in prompt
-        assert "parallel" in prompt.lower() or "gather" in prompt.lower()
+        assert "parallel(" in prompt
 
     def test_chaining_prompt_mentions_return_schema(self):
         tk = _make_typed_toolkit(assist_tool_chaining=True)
@@ -478,7 +476,6 @@ class TestToolPrompt:
         tk = _make_toolkit()
         tp = tk.tool_prompt()
         assert "json" in tp
-        assert "asyncio" in tp
         assert "math" in tp
         assert "re" in tp
 
@@ -869,3 +866,197 @@ class TestEmptyOutputSafetyNet:
         fn = tk.as_tool_sync()
         result = fn('w = get_weather("SF")\nprint(end="")')
         assert "No output captured" not in result
+
+
+# ── Native async tool tests ───────────────────────────────────────────
+
+
+@ez_tool
+async def async_fetch(key: str) -> dict:
+    """Fetch data by key.
+
+    Args:
+        key: The key to fetch
+    """
+    return {"key": key, "value": 42}
+
+
+@ez_tool
+def sync_multiply(x: int) -> int:
+    """Multiply by two.
+
+    Args:
+        x: Input number
+    """
+    return x * 2
+
+
+def _make_async_toolkit(**kwargs):
+    return Toolkit([async_fetch, sync_multiply], **kwargs)
+
+
+def _make_pure_async_toolkit(**kwargs):
+    return Toolkit([async_fetch], **kwargs)
+
+
+class TestNativeAsyncTools:
+    """Tests for native async tool support via sync wrappers + parallel()."""
+
+    def test_ez_tool_detects_async(self):
+        assert async_fetch.is_async is True
+        assert sync_multiply.is_async is False
+
+    def test_has_async_tools_property(self):
+        tk_async = _make_async_toolkit()
+        tk_sync = _make_toolkit()
+        assert tk_async._has_async_tools is True
+        assert tk_sync._has_async_tools is False
+
+    def test_prompt_no_async_def(self):
+        """Async tools should NOT show 'async def' prefix — they're wrapped sync."""
+        tk = _make_async_toolkit()
+        prompt = tk.prompt()
+        assert "async def async_fetch" not in prompt
+        assert "async def sync_multiply" not in prompt
+        assert "def async_fetch" in prompt
+        assert "def sync_multiply" in prompt
+
+    def test_prompt_no_await(self):
+        """Prompt should not mention await — tools are called synchronously."""
+        tk = _make_async_toolkit()
+        prompt = tk.prompt()
+        assert "await" not in prompt
+        assert "async context" not in prompt
+
+    def test_prompt_no_async_prefix_when_all_sync(self):
+        """All-sync toolkit should not prefix any tool with 'async def'."""
+        tk = _make_toolkit()
+        prompt = tk.prompt()
+        assert "async def get_weather" not in prompt
+        assert "async def search_database" not in prompt
+        assert "async context" not in prompt
+
+    def test_prompt_no_to_thread(self):
+        tk = _make_async_toolkit()
+        prompt = tk.prompt()
+        assert "to_thread" not in prompt
+
+    def test_prompt_no_asyncio_run(self):
+        tk = _make_async_toolkit()
+        prompt = tk.prompt()
+        assert "asyncio.run()" not in prompt
+
+    def test_prompt_mentions_parallel(self):
+        tk = _make_async_toolkit()
+        prompt = tk.prompt()
+        assert "parallel(" in prompt
+
+    def test_prompt_parallel_in_postamble(self):
+        """Postamble should document the parallel() helper."""
+        tk = _make_async_toolkit()
+        prompt = tk.prompt()
+        assert "parallel()" in prompt
+        assert "Do NOT call the tools inside parallel()" in prompt
+
+    def test_tool_prompt_no_async(self):
+        tk = _make_async_toolkit()
+        tp = tk.tool_prompt()
+        assert "async async_fetch" not in tp
+        assert "await" not in tp
+
+    def test_tool_prompt_no_to_thread(self):
+        tk = _make_async_toolkit()
+        tp = tk.tool_prompt()
+        assert "to_thread" not in tp
+
+    def test_parallel_in_tool_prompt(self):
+        tk = _make_async_toolkit()
+        tp = tk.tool_prompt()
+        assert "parallel(" in tp
+
+    def test_as_tool_no_async(self):
+        tk = _make_async_toolkit()
+        doc = tk.as_tool().__doc__
+        assert "async async_fetch" not in doc
+
+    def test_parallel_in_as_tool_docstring(self):
+        tk = _make_async_toolkit()
+        doc = tk.as_tool().__doc__
+        assert "parallel(" in doc
+
+    def test_tool_schema_no_async(self):
+        tk = _make_async_toolkit()
+        desc = tk.tool_schema()["function"]["description"]
+        assert "async async_fetch" not in desc
+        assert "parallel(" in desc
+
+    def test_execute_async_tool(self):
+        """Async tools should work via sync wrappers (no await needed)."""
+        tk = _make_pure_async_toolkit()
+        result = tk.execute_sync('r = async_fetch("x")\nprint(r)')
+        assert result.success, f"Failed: {result.error}"
+        assert "value" in result.output
+        assert "42" in result.output
+
+    def test_execute_mixed_sync_async(self):
+        tk = _make_async_toolkit()
+        code = """
+fetched = async_fetch("hello")
+doubled = sync_multiply(fetched["value"])
+print(f"key={fetched['key']}, doubled={doubled}")
+"""
+        result = tk.execute_sync(code)
+        assert result.success, f"Failed: {result.error}"
+        assert "key=hello" in result.output
+        assert "doubled=84" in result.output
+
+    def test_execute_parallel(self):
+        tk = _make_pure_async_toolkit()
+        code = """
+a, b = parallel((async_fetch, "x"), (async_fetch, "y"))
+print(f"a={a['key']}, b={b['key']}")
+"""
+        result = tk.execute_sync(code)
+        assert result.success, f"Failed: {result.error}"
+        assert "a=x" in result.output
+        assert "b=y" in result.output
+
+    @pytest.mark.asyncio
+    async def test_async_execute_with_async_tool(self):
+        tk = _make_pure_async_toolkit()
+        result = await tk.execute('r = async_fetch("test")\nprint(r)')
+        assert result.success, f"Failed: {result.error}"
+        assert "42" in result.output
+
+    def test_validation_passes_without_await(self):
+        """Validation should pass for sync-style async tool calls."""
+        tk = _make_async_toolkit()
+        result = tk.execute_sync('r = async_fetch("x")\nprint(r)')
+        assert result.success, f"Failed: {result.error}"
+        assert "Validation failed" not in (result.error or "")
+
+
+# ── Error enrichment through Toolkit tests ────────────────────────────
+
+
+class TestErrorEnrichment:
+    """Tests for KeyError/AttributeError enrichment in error output."""
+
+    def test_key_error_shows_available_keys(self):
+        tk = _make_toolkit()
+        result = tk.execute_sync('r = get_weather("NYC")\nprint(r["mileage"])')
+        assert not result.success
+        assert "Hint" in result.error_output
+        assert "temp" in result.error_output or "condition" in result.error_output
+
+    def test_attribute_error_hints_dict_syntax(self):
+        tk = _make_toolkit()
+        result = tk.execute_sync('r = get_weather("NYC")\nprint(r.temp)')
+        assert not result.success
+        assert "dict" in result.error_output
+
+    def test_enrichment_via_as_tool_sync(self):
+        tk = _make_toolkit()
+        fn = tk.as_tool_sync()
+        result = fn('r = get_weather("NYC")\nprint(r["mileage"])')
+        assert "Hint" in result or "kmpl" in result or "temp" in result
