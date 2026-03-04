@@ -423,6 +423,65 @@ class TestReturnSchemas:
         template_tool = [t for t in tools if t.name == "query_user_profile"][0]
         assert template_tool.return_schema == user_schema
 
+    async def test_descriptions_override_tool(self):
+        """descriptions kwarg overrides MCP tool description."""
+        mcp_tool = MockMCPTool(
+            name="search",
+            description="Original description",
+            inputSchema={
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        )
+        session = _make_session(tools=[mcp_tool])
+        tools = await tools_from_mcp(
+            session,
+            descriptions={"search": "Better description for LLM"},
+        )
+        assert tools[0].description == "Better description for LLM"
+
+    async def test_descriptions_override_resource(self):
+        """descriptions kwarg overrides MCP resource description."""
+        resource = MockResource(
+            name="config",
+            uri="file:///config.json",
+            description="Original resource desc",
+        )
+        session = _make_session(resources=[resource])
+        tools = await tools_from_mcp(session, descriptions={"read_config": "System config as JSON"})
+        resource_tool = [t for t in tools if t.name == "read_config"][0]
+        assert resource_tool.description == "System config as JSON"
+
+    async def test_descriptions_override_template(self):
+        """descriptions kwarg overrides MCP resource template description."""
+        template = MockResourceTemplate(
+            name="user profile",
+            uriTemplate="users/{user_id}/profile",
+            description="Original template desc",
+        )
+        session = _make_session(resource_templates=[template])
+        tools = await tools_from_mcp(
+            session,
+            descriptions={"query_user_profile": "Fetch a user profile by ID"},
+        )
+        template_tool = [t for t in tools if t.name == "query_user_profile"][0]
+        assert template_tool.description == "Fetch a user profile by ID"
+
+    async def test_descriptions_no_override_keeps_original(self):
+        """Tools without a descriptions entry keep their MCP description."""
+        mcp_tool = MockMCPTool(
+            name="search",
+            description="Original stays",
+            inputSchema={"type": "object", "properties": {}},
+        )
+        session = _make_session(tools=[mcp_tool])
+        tools = await tools_from_mcp(
+            session,
+            descriptions={"other_tool": "Irrelevant"},
+        )
+        assert tools[0].description == "Original stays"
+
     async def test_toolkit_from_mcp_chaining_with_return_schemas(self):
         """Integration: return_schemas + assist_tool_chaining shows Returns hints in prompt."""
         from ez_ptc.toolkit import Toolkit

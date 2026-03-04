@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [0.3.1] - 2026-03-04
 
+### Added
+
+- **`descriptions` kwarg**: `tools_from_mcp()` and `Toolkit.from_mcp()` accept `descriptions: dict[str, str]` to override MCP server tool descriptions per tool. Improves prompt adherence by letting users write better descriptions than what the MCP server provides.
+
 ### Fixed
 
 - **MCP resource template naming**: Resource templates now use `query_` prefix (e.g. `query_user_profile`) instead of `read_` to distinguish from static resources (`read_config`). Prevents name collisions when a static resource and template share the same base name.

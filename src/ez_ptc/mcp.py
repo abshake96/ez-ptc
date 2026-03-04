@@ -237,6 +237,7 @@ async def tools_from_mcp(
     tool_names: list[str] | None = None,
     include_resources: bool = True,
     return_schemas: dict[str, dict[str, Any]] | None = None,
+    descriptions: dict[str, str] | None = None,
 ) -> list[Tool]:
     """Discover MCP tools and resources, wrap as ez-ptc Tool objects.
 
@@ -247,6 +248,8 @@ async def tools_from_mcp(
         return_schemas: Optional mapping of tool name → return schema dict.
             Overrides MCP ``outputSchema`` when provided. Use this to enable
             ``assist_tool_chaining`` for MCP tools that lack ``outputSchema``.
+        descriptions: Optional mapping of tool name → description string.
+            Overrides the MCP server's description for matching tools.
 
     Returns:
         List of ez-ptc Tool objects ready for use in a Toolkit.
@@ -274,7 +277,7 @@ async def tools_from_mcp(
         input_schema = mcp_tool.inputSchema
         param_names = list((input_schema or {}).get("properties", {}).keys())
         signature = _synthesize_signature(name, input_schema)
-        description = mcp_tool.description or ""
+        description = (descriptions or {}).get(name, mcp_tool.description or "")
         fn = _make_mcp_tool_fn(session, name, param_names, description)
 
         # Build ez-ptc parameter schema
@@ -307,9 +310,12 @@ async def tools_from_mcp(
         list_resources_result = await session.list_resources()
         for resource in list_resources_result.resources:
             resource_name = _unique_name("read_" + _sanitize_name(resource.name))
-            desc = resource.description or f"Read resource: {resource.name}"
-            if resource.mimeType:
-                desc += f" (MIME: {resource.mimeType})"
+            if descriptions and resource_name in descriptions:
+                desc = descriptions[resource_name]
+            else:
+                desc = resource.description or f"Read resource: {resource.name}"
+                if resource.mimeType:
+                    desc += f" (MIME: {resource.mimeType})"
             fn = _make_resource_fn(session, str(resource.uri), resource_name, desc)
 
             # Check user-provided return schema for resource tools
@@ -333,9 +339,12 @@ async def tools_from_mcp(
         for template in list_templates_result.resourceTemplates:
             template_name = _unique_name("query_" + _sanitize_name(template.name))
             param_names = _parse_uri_template(template.uriTemplate)
-            desc = template.description or f"Read resource: {template.name}"
-            if template.mimeType:
-                desc += f" (MIME: {template.mimeType})"
+            if descriptions and template_name in descriptions:
+                desc = descriptions[template_name]
+            else:
+                desc = template.description or f"Read resource: {template.name}"
+                if template.mimeType:
+                    desc += f" (MIME: {template.mimeType})"
             fn = _make_resource_template_fn(
                 session, template.uriTemplate, param_names, template_name, desc
             )

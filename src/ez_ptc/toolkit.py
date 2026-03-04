@@ -459,6 +459,7 @@ class Toolkit:
         include_resources: bool = True,
         extra_tools: list[Tool] | None = None,
         return_schemas: dict[str, dict] | None = None,
+        descriptions: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Toolkit:
         """Create a Toolkit from an MCP server session.
@@ -474,6 +475,8 @@ class Toolkit:
             return_schemas: Optional mapping of tool name → return schema dict.
                 Overrides MCP ``outputSchema``. Enables ``assist_tool_chaining``
                 for MCP tools that lack ``outputSchema``.
+            descriptions: Optional mapping of tool name → description string.
+                Overrides the MCP server's description for matching tools.
             **kwargs: Passed to Toolkit.__init__ (preamble, postamble, etc.).
         """
         from .mcp import tools_from_mcp  # lazy import
@@ -483,6 +486,7 @@ class Toolkit:
             tool_names=tool_names,
             include_resources=include_resources,
             return_schemas=return_schemas,
+            descriptions=descriptions,
         )
         all_tools = mcp_tools + (extra_tools or [])
         return cls(all_tools, **kwargs)

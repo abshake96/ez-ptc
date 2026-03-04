@@ -15,7 +15,8 @@
 - **`parallel()` helper**: Built-in concurrency primitive injected into every sandbox execution. `_make_parallel_helper()` in executor.py. `parallel((tool, arg1), (tool2, arg1, arg2))` runs via `ThreadPoolExecutor`, returns results in order. Batch pattern: `results = parallel(*[(tool, id) for id in ids])`. All four prompt surfaces advertise it.
 - **Async tools handled transparently**: `Tool.is_async` auto-detected via `inspect.iscoroutinefunction()`. All tools wrapped as sync via `_make_tool_wrapper()` — async tools dispatched with `asyncio.run_coroutine_threadsafe()`. `has_async_tools` param in `execute_code()` is deprecated/ignored.
 - **Error enrichment**: `_enrich_error()` in executor.py appends available dict keys on `KeyError` and hints bracket syntax on `AttributeError`. Only enriches errors from LLM code (checks `co_filename` against both `"<string>"` and `"<llm_code>"`).
-- **MCP Tool Bridge**: `mcp.py` wraps MCP server tools/resources as ez-ptc `Tool` objects (`is_async=True`). `Toolkit.from_mcp(session)` / `Toolkit.from_mcp_sync(session)` for one-liner setup. `get_mcp_prompt()` / `list_mcp_prompts()` for prompt templates. MCP `outputSchema` auto-used as `return_schema`; `return_schemas` kwarg overrides. Lazy import keeps core zero-dep. Optional extra: `ez-ptc[mcp]`
+- **MCP Tool Bridge**: `mcp.py` wraps MCP server tools/resources as ez-ptc `Tool` objects (`is_async=True`). `Toolkit.from_mcp(session)` / `Toolkit.from_mcp_sync(session)` for one-liner setup. `get_mcp_prompt()` / `list_mcp_prompts()` for prompt templates. MCP `outputSchema` auto-used as `return_schema`; `return_schemas` kwarg overrides. `descriptions` kwarg overrides MCP tool descriptions per tool. Lazy import keeps core zero-dep. Optional extra: `ez-ptc[mcp]`
+- **MCP naming conventions**: Tools keep their MCP name. Static resources get `read_` prefix. Resource templates get `query_` prefix. Name deduplication appends `_2`, `_3`, etc. on collision across all three categories.
 - **Toolkit utilities**: `Toolkit.__iter__` and `Toolkit.__len__` allow iteration/counting of tools. `execute()`/`execute_sync()` accept `validate: bool = True` to control AST validation.
 - **Optional extras**: `ez-ptc[mcp]` (requires `mcp>=1.0`), `ez-ptc[pydantic]` (requires `pydantic>=2.0`)
 
@@ -25,7 +26,7 @@
 - `SandboxBackend`, `LocalSandbox`
 
 ## Testing
-- `uv run pytest tests/ -v` — ~308 tests, runs in ~23s
+- `uv run pytest tests/ -v` — ~312 tests, runs in ~23s
 - When changing prompt text, add assertions for both presence (when enabled) AND absence (when disabled)
 - Test files: `test_executor.py`, `test_toolkit.py`, `test_schema.py`, `test_sandbox.py`, `test_validator.py`, `test_mcp.py`, `test_tool.py`
 - Async tests use `pytest-asyncio` with `asyncio_mode = "auto"` in pyproject.toml

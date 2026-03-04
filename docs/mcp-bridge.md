@@ -22,18 +22,12 @@ MCP servers expose tools one-at-a-time -- each LLM turn calls a single tool. ez-
 
 ```python
 # Instead of 3 separate LLM turns, the LLM writes one code block:
-import asyncio
-
-async def main():
-    # Call two MCP tools in parallel
-    readme, issues = await asyncio.gather(
-        asyncio.to_thread(read_readme, repo="myorg/myrepo"),
-        asyncio.to_thread(search_issues, query="bug", state="open"),
-    )
-    print(f"README length: {len(readme)}")
-    print(f"Open bugs: {len(issues)}")
-
-asyncio.run(main())
+readme, issues = parallel(
+    (read_readme, "myorg/myrepo"),
+    (search_issues, "bug", "open"),
+)
+print(f"README length: {len(readme)}")
+print(f"Open bugs: {len(issues)}")
 ```
 
 ## Quick start
@@ -94,7 +88,9 @@ The bridge wraps three MCP primitives as ez-ptc `Tool` objects:
 |---|---|---|
 | **Tools** | `Tool` with async wrapper around `session.call_tool()` | Same as MCP tool name |
 | **Static Resources** | Zero-arg `Tool` calling `session.read_resource(uri)` | `read_{sanitized_name}` |
-| **Resource Templates** | `Tool` with args from URI template variables, calling `session.read_resource()` | `read_{sanitized_name}` |
+| **Resource Templates** | `Tool` with args from URI template variables, calling `session.read_resource()` | `query_{sanitized_name}` |
+
+Names are deduplicated across all categories — if a collision occurs, `_2`, `_3`, etc. are appended automatically.
 
 **Prompts** are NOT wrapped as tools. They're accessed separately via `get_mcp_prompt()` -- see [Prompt templates](#prompt-templates) below.
 
@@ -267,7 +263,28 @@ print(doc["content"])
 
 `return_schemas` also works on resource tool names (e.g. `"read_config"` for static resources, `"query_user_profile"` for templates).
 
-The lower-level `tools_from_mcp()` accepts the same `return_schemas` parameter:
+## Overriding descriptions
+
+MCP servers often have generic or unhelpful tool descriptions. Use `descriptions` to override them per tool, improving LLM prompt adherence:
+
+```python
+toolkit = await Toolkit.from_mcp(
+    session,
+    descriptions={
+        "search": "Search the knowledge base. Returns a list of matching documents with title and score.",
+        "read_config": "System configuration as a JSON dict with keys: version, max_workers, debug.",
+        "query_user_profile": "Fetch a user profile by ID. Returns dict with name, email, role.",
+    },
+)
+```
+
+Tools without a `descriptions` entry keep their original MCP server description. The `descriptions` kwarg works on all three categories — tools, static resources (`read_`), and templates (`query_`).
+
+The lower-level `tools_from_mcp()` accepts the same `descriptions` parameter.
+
+## Lower-level `tools_from_mcp()`
+
+The lower-level `tools_from_mcp()` accepts the same `return_schemas` and `descriptions` parameters:
 
 ```python
 from ez_ptc.mcp import tools_from_mcp
@@ -387,7 +404,7 @@ asyncio.run(main())
 |---|---|
 | `Toolkit.from_mcp(session, **kwargs)` | Create a Toolkit from an MCP session (async) |
 | `Toolkit.from_mcp_sync(session, **kwargs)` | Sync version of `from_mcp()` |
-| `tools_from_mcp(session, *, tool_names, include_resources, return_schemas)` | Discover and wrap MCP tools/resources as `Tool` objects |
+| `tools_from_mcp(session, *, tool_names, include_resources, return_schemas, descriptions)` | Discover and wrap MCP tools/resources as `Tool` objects |
 | `get_mcp_prompt(session, name, arguments)` | Fetch and expand an MCP prompt template |
 | `list_mcp_prompts(session)` | List available prompts with argument info |
 

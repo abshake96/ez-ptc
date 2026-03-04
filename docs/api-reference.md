@@ -101,7 +101,7 @@ Toolkit(
 
 ### Class Methods
 
-#### `await Toolkit.from_mcp(session, *, tool_names=None, include_resources=True, extra_tools=None, return_schemas=None, **kwargs) -> Toolkit`
+#### `await Toolkit.from_mcp(session, *, tool_names=None, include_resources=True, extra_tools=None, return_schemas=None, descriptions=None, **kwargs) -> Toolkit`
 
 Create a Toolkit from an MCP server session. Discovers tools and resources, wraps them as `Tool` objects. Requires `pip install ez-ptc[mcp]`.
 
@@ -112,6 +112,7 @@ Create a Toolkit from an MCP server session. Discovers tools and resources, wrap
 | `include_resources` | `bool` | `True` | Whether to wrap resources/templates as tools |
 | `extra_tools` | `list[Tool] \| None` | `None` | Additional local `Tool` objects to include |
 | `return_schemas` | `dict[str, dict] \| None` | `None` | Map of tool name → JSON schema for return types. Applied to matching MCP tools for `assist_tool_chaining`. |
+| `descriptions` | `dict[str, str] \| None` | `None` | Map of tool name → description string. Overrides MCP server descriptions for matching tools. |
 | `**kwargs` | | | Passed to `Toolkit.__init__` (preamble, postamble, etc.) |
 
 ```python
@@ -401,10 +402,11 @@ await tools_from_mcp(
     tool_names: list[str] | None = None,
     include_resources: bool = True,
     return_schemas: dict[str, dict] | None = None,
+    descriptions: dict[str, str] | None = None,
 ) -> list[Tool]
 ```
 
-Discover MCP tools and resources, wrap them as ez-ptc `Tool` objects.
+Discover MCP tools and resources, wrap them as ez-ptc `Tool` objects. Tools keep their MCP name, static resources get a `read_` prefix, and resource templates get a `query_` prefix. Name collisions are resolved by appending `_2`, `_3`, etc.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -412,6 +414,7 @@ Discover MCP tools and resources, wrap them as ez-ptc `Tool` objects.
 | `tool_names` | `list[str] \| None` | `None` | Only include tools whose names match. Applies to MCP tools AND resource tools. |
 | `include_resources` | `bool` | `True` | Whether to wrap static resources and resource templates |
 | `return_schemas` | `dict[str, dict] \| None` | `None` | Map of tool name → JSON schema for return types |
+| `descriptions` | `dict[str, str] \| None` | `None` | Map of tool name → description string. Overrides MCP server descriptions. |
 
 **Returns:** `list[Tool]`
 
