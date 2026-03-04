@@ -4,20 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.3.0] - 2026-03-03
+## [0.3.0] - 2026-03-04
 
 ### Added
 
-- **Native async tool support**: Async tools (`async def`) are automatically detected via `Tool.is_async`. When any tool is async, LLM code runs in an async context — `await` works natively, no more `asyncio.to_thread` gymnastics. Prompts show `async def` prefix for async tools and guide the LLM to use `await`/`asyncio.gather` patterns.
+- **`parallel()` helper**: Built-in concurrency primitive injected into every sandbox execution. `parallel((tool1, arg1), (tool2, arg1, arg2))` runs tools concurrently via `ThreadPoolExecutor` and returns results in order. Batch pattern: `results = parallel(*[(tool, id) for id in ids])`. Validates arguments and gives specific error messages when tools are called inside `parallel()` instead of passed as tuples.
 - **Error enrichment**: On `KeyError`, error output now shows available dict keys in scope. On `AttributeError` against a dict, hints to use `['key']` bracket syntax. Only enriches errors from LLM code, not tool internals. Enables LLM self-correction in 1 retry instead of 3+.
-- **`allow_await` validator param**: `validate_code()` accepts `allow_await=True` to permit `await` syntax in pre-flight AST validation (used automatically when toolkit has async tools).
+- **Benchmark script**: `benchmark.py` compares Traditional vs ez-ptc (basic) vs ez-ptc (chaining) using the OpenAI API, with metrics for turns, tokens, and latency.
 
 ### Changed
 
-- All four prompt surfaces (`prompt()`, `tool_prompt()`, `as_tool()`, `tool_schema()`) now prefix async tools with `async def`/`async ` and show simplified await-based patterns instead of `asyncio.to_thread` when async tools are present
-- `execute_code()` accepts `has_async_tools` param — when True, wraps LLM code in `async def` and runs with `asyncio.run()`
-- `LocalSandbox.execute()` auto-detects async tools and passes `has_async_tools` to executor
-- MCP tools, resources, and resource templates are now created with `is_async=True` (they were always async internally)
+- **Replaced async execution path with `parallel()` helper**: LLM-generated code no longer needs `async def`/`await`/`asyncio.gather`. All tools (sync and async) are wrapped as sync via `_make_tool_wrapper()` — async tools dispatched transparently with `asyncio.run_coroutine_threadsafe()`. This is far more reliable for LLM code generation.
+- All four prompt surfaces (`prompt()`, `tool_prompt()`, `as_tool()`, `tool_schema()`) now advertise `parallel()` with both basic and batch patterns
+- `has_async_tools` param in `execute_code()` is deprecated and ignored
+
+### Removed
+
+- Native async LLM code execution (`async def` wrapping, `await` in sandbox) — replaced by the simpler `parallel()` approach that doesn't require LLMs to write async Python
 
 ## [0.2.2] - 2026-03-02
 

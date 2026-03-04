@@ -57,6 +57,7 @@ def _build_postamble(assist_tool_chaining: bool) -> str:
     lines += [
         "For parallel execution, use the built-in parallel() helper:",
         "    a, b = parallel((tool1, arg1), (tool2, arg1, arg2))",
+        "    results = parallel(*[(tool, id) for id in ids])  # batch pattern",
         "parallel() takes (callable, arg1, arg2, ...) tuples and runs them concurrently.",
         "Returns a list of results in the same order as the input tuples.",
         "Do NOT call the tools inside parallel() — pass the function and its arguments separately.",
@@ -251,6 +252,7 @@ class Toolkit:
             )
         parts.append(
             "For parallel execution, use the built-in parallel() helper: a, b = parallel((tool1, arg1), (tool2, arg1, arg2))\n"
+            "Batch pattern: results = parallel(*[(tool, id) for id in ids])\n"
             "parallel() takes (callable, arg1, ...) tuples and runs them concurrently. Returns a list of results in order.\n"
             "Do NOT call the tools inside parallel() — pass the function and its arguments separately."
         )
@@ -295,6 +297,7 @@ class Toolkit:
 
         parallel_hint = (
             "    For parallel execution: a, b = parallel((tool1, arg1), (tool2, arg1, arg2))\n"
+            "    Batch pattern: results = parallel(*[(tool, id) for id in ids])\n"
             "    Do NOT call tools inside parallel() — pass the function and its arguments separately."
         )
         error_line = f"    {self._error_hint}\n" if self._error_hint else ""
@@ -402,6 +405,7 @@ class Toolkit:
             f"IMPORTANT: Combine ALL operations into a SINGLE code block — do NOT make multiple separate calls.\n"
             f"{usage_hint}\n"
             f"For parallel execution: a, b = parallel((tool1, arg1), (tool2, arg1, arg2)). "
+            f"Batch pattern: results = parallel(*[(tool, id) for id in ids]). "
             f"Do NOT call tools inside parallel() — pass the function and its arguments separately."
         )
         if self._error_hint:

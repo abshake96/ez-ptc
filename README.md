@@ -136,17 +136,13 @@ for turn in range(10):
 Instead of separate tool calls, the LLM writes a single code block:
 
 ```python
-import asyncio
-
-async def main():
-    sf, ny = await asyncio.gather(
-        asyncio.to_thread(get_weather, "San Francisco, CA"),
-        asyncio.to_thread(get_weather, "New York, NY"),
-    )
-    print(f"SF: {sf['temp']}°C, {sf['condition']}")
-    print(f"NY: {ny['temp']}°C, {ny['condition']}")
-
-asyncio.run(main())
+# Built-in parallel() helper runs tools concurrently
+sf, ny = parallel(
+    (get_weather, "San Francisco, CA"),
+    (get_weather, "New York, NY"),
+)
+print(f"SF: {sf['temp']}°C, {sf['condition']}")
+print(f"NY: {ny['temp']}°C, {ny['condition']}")
 ```
 
 Multiple tool calls, parallel execution, variable passing -- one round-trip.
@@ -255,7 +251,8 @@ If you are already using the Claude API and want a managed solution, Anthropic's
 - **MCP Tool Bridge** -- wrap any MCP server's tools and resources as native ez-ptc tools with `Toolkit.from_mcp()`
 - **Sandboxed execution** -- restricted builtins, no file I/O, no networking, configurable timeout
 - **Tool chaining** -- `assist_tool_chaining=True` documents return types so the LLM chains outputs correctly
-- **Async support** -- `asyncio` is pre-imported, LLMs can use `asyncio.gather` for parallel execution
+- **Parallel execution** -- built-in `parallel()` helper lets LLMs run tools concurrently with a simple `parallel((tool, arg), ...)` pattern
+- **Async tool support** -- `async def` tools auto-detected and handled transparently; no special LLM-side code needed
 
 ## Documentation
 
