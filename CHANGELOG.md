@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.0] - 2026-03-05
+
+### Added
+
+- **Observability hooks**: `Toolkit(on_tool_call=fn)` registers a callback invoked with a `ToolCallRecord` after each tool execution, enabling logging, metrics, and debugging.
+- **Typed `ToolCallRecord`**: Tool call logs are now `ToolCallRecord` dataclasses (fields: `name`, `args`, `kwargs`, `result`, `duration_ms`) instead of raw dicts. Includes per-call timing via `time.perf_counter()`.
+- **Dynamic tool filtering**: `Toolkit.filter(*names)` returns a new `Toolkit` with a subset of tools. `Toolkit.get_tool(name)` retrieves a single `Tool` by name.
+- **Auto-retry with error feedback**: `execute(code, max_retries=N, retry_handler=fn)` — on failure, calls the handler with `(failed_code, error_msg)` to get corrected code. Tool calls accumulate across attempts. `result.attempts` tracks total attempts.
+- **Human-in-the-loop approval**: `Tool(requires_approval=True)` marks tools needing user approval. `execute(code, approved_calls=[...])` pre-approves specific tools. Unapproved tools pause execution — `result.is_paused` and `result.pending_tool_calls` indicate what needs approval. Uses AST-based scanning via `_find_called_tool_names()`.
+- **Streaming execution**: `execute_streaming(code)` (async) and `execute_streaming_sync(code)` (sync) yield `ExecutionEvent` objects in real-time with types: `"output"`, `"tool_call"`, `"error"`, `"done"`.
+- **Multi-model schema formats**: `tool_schema(format=...)` supports `"openai"`, `"anthropic"`, `"gemini"`, `"mistral"`, and `"raw"`.
+- **New exports**: `ExecutionEvent`, `ToolCallRecord`, `PendingToolCall` added to `__init__.py`.
+
+### Changed
+
+- `ExecutionResult.is_paused` is now a derived `@property` (not a stored field).
+- Validation error formatting extracted into shared `_validation_error_result()` helper.
+- `_tool_name_set` and `_tools_needing_approval` cached at `Toolkit.__init__` for performance.
+
+### Removed
+
+- Dead `_make_async_tool_wrapper()` code in executor.py.
+
 ## [0.3.1] - 2026-03-04
 
 ### Added

@@ -5,14 +5,60 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import inspect
+import queue
 import re
-from typing import Any, Awaitable, Callable, Literal
+import threading
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterator, Literal
 
-from .executor import ExecutionResult
+from .executor import ExecutionEvent, ExecutionResult, PendingToolCall, ToolCallRecord
 from .sandbox import LocalSandbox, SandboxBackend
 from .schema import format_return_schema
 from .tool import Tool
 from .validator import validate_code
+
+
+def _validation_error_result(errors: list[str], **kwargs: Any) -> ExecutionResult:
+    """Build an ExecutionResult for a validation failure."""
+    return ExecutionResult(
+        success=False,
+        error="Validation failed: " + "; ".join(errors),
+        error_output="Validation errors:\n" + "\n".join(f"- {e}" for e in errors),
+        **kwargs,
+    )
+
+
+def _find_called_tool_names(code: str, tool_names: set[str]) -> set[str]:
+    """AST-scan code to find which tool names are called.
+
+    Handles both direct calls like ``tool(args)`` and calls via ``parallel()``.
+    """
+    import ast as _ast
+
+    try:
+        tree = _ast.parse(code)
+    except SyntaxError:
+        return set()
+
+    called: set[str] = set()
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Call):
+            # Direct call: tool_name(...)
+            if isinstance(node.func, _ast.Name) and node.func.id in tool_names:
+                called.add(node.func.id)
+            # parallel((tool_name, arg1), ...) — tool refs as first element of tuples
+            if isinstance(node.func, _ast.Name) and node.func.id == "parallel":
+                for arg in node.args:
+                    if isinstance(arg, _ast.Starred) and isinstance(arg.value, (_ast.ListComp, _ast.GeneratorExp)):
+                        elt = arg.value.elt
+                        if isinstance(elt, _ast.Tuple) and elt.elts:
+                            first = elt.elts[0]
+                            if isinstance(first, _ast.Name) and first.id in tool_names:
+                                called.add(first.id)
+                    elif isinstance(arg, _ast.Tuple) and arg.elts:
+                        first = arg.elts[0]
+                        if isinstance(first, _ast.Name) and first.id in tool_names:
+                            called.add(first.id)
+    return called
 
 
 def _run_sync(coro: Awaitable[Any]) -> Any:
@@ -93,6 +139,7 @@ class Toolkit:
         timeout: float = 30.0,
         sandbox: SandboxBackend | None = None,
         error_hint: str | None = None,
+        on_tool_call: Callable[[ToolCallRecord], None] | None = None,
     ) -> None:
         for item in tools:
             if not isinstance(item, Tool):
@@ -113,6 +160,15 @@ class Toolkit:
         self._timeout = timeout
         self._sandbox: SandboxBackend = sandbox or LocalSandbox()
         self._custom_error_hint = error_hint
+        self._on_tool_call = on_tool_call
+        self._tool_name_set = set(self._tool_map.keys())
+        self._tools_needing_approval = frozenset(
+            name for name, tool in self._tool_map.items() if tool.requires_approval
+        )
+
+    def get_tool(self, name: str) -> Tool:
+        """Look up a tool by name. Raises KeyError if not found."""
+        return self._tool_map[name]
 
     def __iter__(self):
         return iter(self.tools)
@@ -374,11 +430,16 @@ class Toolkit:
 
         return execute_tools
 
-    def tool_schema(self, format: Literal["openai", "anthropic"] = "openai") -> dict[str, Any]:
+    def tool_schema(self, format: Literal["openai", "anthropic", "gemini", "raw", "mistral"] = "openai") -> dict[str, Any]:
         """Return a tool definition dict in the specified provider format.
 
         Args:
-            format: 'openai' (default, most universal) or 'anthropic'
+            format: Provider format. Supported values:
+                - 'openai' (default) — ``{"type": "function", "function": {...}}``
+                - 'anthropic' — ``{"name": ..., "input_schema": {...}}``
+                - 'gemini' — ``{"name": ..., "description": ..., "parameters": {...}}``
+                - 'raw' — same as gemini (bare JSON schema, no wrapper)
+                - 'mistral' — same as openai (Mistral uses OpenAI-compatible format)
         """
         # Build description with sub-tool listing
         tool_lines = []
@@ -413,40 +474,84 @@ class Toolkit:
 
         code_desc = "Python code to execute. The listed functions are available as globals."
 
+        parameters_schema = {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": code_desc,
+                }
+            },
+            "required": ["code"],
+        }
+
         if format == "anthropic":
             return {
                 "name": "execute_tools",
                 "description": description,
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "code": {
-                            "type": "string",
-                            "description": code_desc,
-                        }
-                    },
-                    "required": ["code"],
-                },
+                "input_schema": parameters_schema,
             }
 
-        # OpenAI format (default)
+        if format in ("gemini", "raw"):
+            return {
+                "name": "execute_tools",
+                "description": description,
+                "parameters": parameters_schema,
+            }
+
+        # OpenAI / Mistral format (default)
         return {
             "type": "function",
             "function": {
                 "name": "execute_tools",
                 "description": description,
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "code": {
-                            "type": "string",
-                            "description": code_desc,
-                        }
-                    },
-                    "required": ["code"],
-                },
+                "parameters": parameters_schema,
             },
         }
+
+    # ── Filtering ─────────────────────────────────────────────────────
+
+    def filter(
+        self,
+        names: list[str] | None = None,
+        predicate: Callable[[Tool], bool] | None = None,
+    ) -> Toolkit:
+        """Return a new Toolkit containing only matching tools.
+
+        Args:
+            names: If provided, include only tools with these names.
+            predicate: If provided, include only tools where predicate(tool) is True.
+
+        At least one of names or predicate must be provided. If both, both
+        conditions must match (AND logic). Raises ValueError if the result
+        would be empty.
+        """
+        if names is None and predicate is None:
+            raise ValueError("At least one of 'names' or 'predicate' must be provided.")
+
+        name_set = set(names) if names is not None else None
+
+        filtered: list[Tool] = []
+        for tool in self.tools:
+            if name_set is not None and tool.name not in name_set:
+                continue
+            if predicate is not None and not predicate(tool):
+                continue
+            filtered.append(tool)
+
+        if not filtered:
+            raise ValueError("Filter matched no tools — result would be empty.")
+
+        return Toolkit(
+            tools=filtered,
+            preamble=self._custom_preamble,
+            postamble=self._custom_postamble,
+            assist_tool_chaining=self._assist_tool_chaining,
+            timeout=self._timeout,
+            sandbox=self._sandbox,
+            error_hint=self._custom_error_hint,
+            on_tool_call=self._on_tool_call,
+        )
 
     # ── MCP bridge ────────────────────────────────────────────────────
 
@@ -510,6 +615,9 @@ class Toolkit:
         code: str,
         timeout: float | None = None,
         validate: bool = True,
+        approved_calls: list[str] | None = None,
+        max_retries: int = 0,
+        retry_handler: Callable[[str, str], Awaitable[str]] | None = None,
     ) -> ExecutionResult:
         """Execute LLM-generated Python code with tools available.
 
@@ -519,38 +627,86 @@ class Toolkit:
             code: Python code string to execute
             timeout: Maximum execution time in seconds (None uses toolkit default)
             validate: Run AST validation before execution (default True)
+            approved_calls: List of tool names approved for execution. Tools with
+                ``requires_approval=True`` that are called in the code but not in
+                this list will cause execution to pause and return a result with
+                ``is_paused=True`` and ``pending_tool_calls``.
+            max_retries: Maximum number of retry attempts (0 = no retry, default)
+            retry_handler: Async callable that takes (failed_code, error_message)
+                and returns new code to try. Required when max_retries > 0.
 
         Returns:
-            ExecutionResult with output, tool calls, and error info
+            ExecutionResult with output, tool calls, and error info.
+            The ``attempts`` field indicates how many times execution was tried.
+
+        Raises:
+            ValueError: If max_retries > 0 but retry_handler is None.
         """
+        if max_retries > 0 and retry_handler is None:
+            raise ValueError("retry_handler is required when max_retries > 0")
+
         effective_timeout = timeout if timeout is not None else self._timeout
 
-        if validate:
-            vr = validate_code(
-                code, set(self._tool_map.keys()), allow_await=False
-            )
-            if not vr.is_safe:
+        # Check for tools that require approval (before any execution)
+        if self._tools_needing_approval:
+            called_tools = _find_called_tool_names(code, self._tool_name_set)
+            approved = set(approved_calls) if approved_calls else set()
+            unapproved = (called_tools & self._tools_needing_approval) - approved
+            if unapproved:
                 return ExecutionResult(
-                    success=False,
-                    error="Validation failed: " + "; ".join(vr.errors),
-                    error_output="Validation errors:\n" + "\n".join(f"- {e}" for e in vr.errors),
+                    pending_tool_calls=[
+                        PendingToolCall(tool_name=name) for name in sorted(unapproved)
+                    ],
                 )
-            warning_prefix = ""
-            if vr.warnings:
-                warning_prefix = "Validation warnings:\n" + "\n".join(f"- {w}" for w in vr.warnings) + "\n"
 
-        result = await self._sandbox.execute(code, self._tool_map, effective_timeout)
+        all_tool_calls: list[ToolCallRecord] = []
+        attempt = 0
+        current_code = code
 
-        if validate and vr.warnings:
-            result.error_output = warning_prefix + result.error_output
+        while True:
+            attempt += 1
 
-        return result
+            if validate:
+                vr = validate_code(
+                    current_code, self._tool_name_set, allow_await=False
+                )
+                if not vr.is_safe:
+                    result = _validation_error_result(
+                        vr.errors, attempts=attempt, tool_calls=list(all_tool_calls),
+                    )
+                    if attempt <= max_retries and retry_handler is not None:
+                        error_msg = result.error_output or result.error or "Unknown error"
+                        current_code = await retry_handler(current_code, error_msg)
+                        continue
+                    return result
+                warning_prefix = ""
+                if vr.warnings:
+                    warning_prefix = "Validation warnings:\n" + "\n".join(f"- {w}" for w in vr.warnings) + "\n"
+
+            result = await self._sandbox.execute(current_code, self._tool_map, effective_timeout, self._on_tool_call)
+
+            if validate and vr.warnings:
+                result.error_output = warning_prefix + result.error_output
+
+            all_tool_calls.extend(result.tool_calls)
+
+            if result.success or attempt > max_retries:
+                result.tool_calls = all_tool_calls
+                result.attempts = attempt
+                return result
+
+            # Retry: call the handler to get new code
+            error_msg = result.error_output or result.error or "Unknown error"
+            current_code = await retry_handler(current_code, error_msg)
 
     def execute_sync(
         self,
         code: str,
         timeout: float | None = None,
         validate: bool = True,
+        approved_calls: list[str] | None = None,
+        max_retries: int = 0,
+        retry_handler: Callable[[str, str], str] | None = None,
     ) -> ExecutionResult:
         """Execute LLM-generated Python code with tools available (sync version).
 
@@ -560,8 +716,154 @@ class Toolkit:
             code: Python code string to execute
             timeout: Maximum execution time in seconds (None uses toolkit default)
             validate: Run AST validation before execution (default True)
+            approved_calls: List of tool names approved for execution (see ``execute()``).
+            max_retries: Maximum number of retry attempts (0 = no retry, default)
+            retry_handler: Sync callable that takes (failed_code, error_message)
+                and returns new code to try. Required when max_retries > 0.
 
         Returns:
-            ExecutionResult with output, tool calls, and error info
+            ExecutionResult with output, tool calls, and error info.
+
+        Raises:
+            ValueError: If max_retries > 0 but retry_handler is None.
         """
-        return _run_sync(self.execute(code, timeout, validate))
+        async_handler = None
+        if retry_handler is not None:
+            sync_handler = retry_handler
+
+            async def async_handler(failed_code: str, error_message: str) -> str:
+                return sync_handler(failed_code, error_message)
+
+        return _run_sync(
+            self.execute(
+                code,
+                timeout=timeout,
+                validate=validate,
+                approved_calls=approved_calls,
+                max_retries=max_retries,
+                retry_handler=async_handler,
+            )
+        )
+
+    # ── Streaming execution ───────────────────────────────────────────
+
+    _STREAMING_DONE = object()
+
+    def _start_streaming_execution(
+        self, code: str, loop: asyncio.AbstractEventLoop | None = None,
+    ) -> tuple[threading.Thread, queue.Queue, list[ExecutionResult]]:
+        """Shared setup for streaming: starts execution thread, returns (thread, queue, result_holder)."""
+        from .executor import execute_code
+
+        event_queue: queue.Queue = queue.Queue()
+        result_holder: list[ExecutionResult] = []
+
+        def _run() -> None:
+            try:
+                r = execute_code(
+                    code, self._tool_map, self._timeout,
+                    loop=loop, on_tool_call=self._on_tool_call,
+                    event_queue=event_queue,
+                )
+                result_holder.append(r)
+            except Exception as e:
+                result_holder.append(ExecutionResult(
+                    success=False, error=f"{type(e).__name__}: {e}", error_output=str(e),
+                ))
+            finally:
+                event_queue.put(self._STREAMING_DONE)
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return thread, event_queue, result_holder
+
+    def _finalize_streaming_result(
+        self, result_holder: list[ExecutionResult], vr: Any | None,
+    ) -> ExecutionEvent:
+        """Build the final 'done' event, attaching validation warnings if any."""
+        final_result = result_holder[0] if result_holder else ExecutionResult(
+            success=False, error="Execution did not produce a result"
+        )
+        if vr is not None and vr.warnings:
+            warning_prefix = "Validation warnings:\n" + "\n".join(f"- {w}" for w in vr.warnings) + "\n"
+            final_result.error_output = warning_prefix + final_result.error_output
+        return ExecutionEvent(type="done", data=final_result)
+
+    async def execute_streaming(
+        self,
+        code: str,
+        validate: bool = True,
+    ) -> AsyncIterator[ExecutionEvent]:
+        """Execute code and yield events as they occur.
+
+        Yields ExecutionEvent objects with types:
+        - "output": print() output (data is str)
+        - "tool_call": tool invocation (data is ToolCallRecord)
+        - "error": stderr output during failure (data is str)
+        - "done": final event (data is ExecutionResult)
+        """
+        vr = None
+        if validate:
+            vr = validate_code(code, self._tool_name_set, allow_await=False)
+            if not vr.is_safe:
+                error_result = _validation_error_result(vr.errors)
+                yield ExecutionEvent(type="error", data=error_result.error_output)
+                yield ExecutionEvent(type="done", data=error_result)
+                return
+
+        loop = asyncio.get_running_loop()
+        thread, event_queue, result_holder = self._start_streaming_execution(code, loop=loop)
+
+        while True:
+            try:
+                event = await loop.run_in_executor(
+                    None, lambda: event_queue.get(timeout=0.01)
+                )
+            except queue.Empty:
+                if not thread.is_alive() and event_queue.empty():
+                    break
+                continue
+            if event is self._STREAMING_DONE:
+                break
+            yield event
+
+        await loop.run_in_executor(None, thread.join)
+        yield self._finalize_streaming_result(result_holder, vr)
+
+    def execute_streaming_sync(
+        self,
+        code: str,
+        validate: bool = True,
+    ) -> Iterator[ExecutionEvent]:
+        """Execute code and yield events as they occur (sync version).
+
+        Yields ExecutionEvent objects with types:
+        - "output": print() output (data is str)
+        - "tool_call": tool invocation (data is ToolCallRecord)
+        - "error": stderr output during failure (data is str)
+        - "done": final event (data is ExecutionResult)
+        """
+        vr = None
+        if validate:
+            vr = validate_code(code, self._tool_name_set, allow_await=False)
+            if not vr.is_safe:
+                error_result = _validation_error_result(vr.errors)
+                yield ExecutionEvent(type="error", data=error_result.error_output)
+                yield ExecutionEvent(type="done", data=error_result)
+                return
+
+        thread, event_queue, result_holder = self._start_streaming_execution(code)
+
+        while True:
+            try:
+                event = event_queue.get(timeout=0.05)
+            except queue.Empty:
+                if not thread.is_alive() and event_queue.empty():
+                    break
+                continue
+            if event is self._STREAMING_DONE:
+                break
+            yield event
+
+        thread.join()
+        yield self._finalize_streaming_result(result_holder, vr)

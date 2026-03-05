@@ -49,8 +49,8 @@ print(weather["condition"])
     assert result.success
     assert "sunny" in result.output
     assert len(result.tool_calls) == 1
-    assert result.tool_calls[0]["name"] == "get_weather"
-    assert result.tool_calls[0]["args"] == ("San Francisco",)
+    assert result.tool_calls[0].name == "get_weather"
+    assert result.tool_calls[0].args == ("San Francisco",)
 
 
 def test_multiple_tool_calls():
@@ -103,9 +103,9 @@ print("done")
     result = execute_code(code, tools)
     assert result.success
     assert len(result.tool_calls) == 2
-    assert result.tool_calls[0]["args"] == ("cats",)
-    assert result.tool_calls[0]["kwargs"]["limit"] == 2
-    assert result.tool_calls[1]["args"] == ("dogs",)
+    assert result.tool_calls[0].args == ("cats",)
+    assert result.tool_calls[0].kwargs["limit"] == 2
+    assert result.tool_calls[1].args == ("dogs",)
 
 
 def test_exception_in_code():
@@ -217,7 +217,7 @@ print(weather["temp"])
     result = execute_code(code, tools)
     assert result.success
     assert "22" in result.output
-    assert result.tool_calls[0]["args"] == ("Paris",)
+    assert result.tool_calls[0].args == ("Paris",)
 
 
 def test_async_tool():
@@ -720,3 +720,71 @@ def test_no_enrichment_for_non_llm_errors():
     assert "KeyError" in result.error
     # Should NOT have enrichment hint since error is from tool internal code
     assert "Hint" not in result.error_output
+
+
+# ── ToolCallRecord tests ────────────────────────────────────────────
+
+
+def test_tool_call_record_fields():
+    """ToolCallRecord should have name, args, kwargs, result, duration_ms."""
+    from ez_ptc.executor import ToolCallRecord
+
+    tools = _make_tools()
+    code = 'result = get_weather("NYC")\nprint(result)'
+    result = execute_code(code, tools)
+    assert result.success
+    assert len(result.tool_calls) == 1
+    rec = result.tool_calls[0]
+    assert isinstance(rec, ToolCallRecord)
+    assert rec.name == "get_weather"
+    assert rec.args == ("NYC",)
+    assert rec.kwargs == {}
+    assert rec.result == {"temp": 22, "condition": "sunny"}
+    assert rec.duration_ms >= 0
+
+
+def test_tool_call_record_timing():
+    """duration_ms should reflect actual call time."""
+    import time as _time
+
+    @ez_tool
+    def slow_tool(x: int) -> int:
+        """Slow tool.
+
+        Args:
+            x: Input
+        """
+        _time.sleep(0.05)
+        return x
+
+    tools = {"slow_tool": slow_tool}
+    code = "slow_tool(1)"
+    result = execute_code(code, tools)
+    assert result.success
+    assert result.tool_calls[0].duration_ms >= 40  # at least 40ms
+
+
+def test_on_tool_call_callback():
+    """on_tool_call should be invoked for each tool call."""
+    from ez_ptc.executor import ToolCallRecord
+
+    received = []
+    tools = _make_tools()
+    code = """
+get_weather("NYC")
+search("test", limit=2)
+"""
+    result = execute_code(code, tools, on_tool_call=received.append)
+    assert result.success
+    assert len(received) == 2
+    assert isinstance(received[0], ToolCallRecord)
+    assert received[0].name == "get_weather"
+    assert received[1].name == "search"
+
+
+def test_on_tool_call_none_is_fine():
+    """on_tool_call=None should not cause errors."""
+    tools = _make_tools()
+    code = 'get_weather("NYC")'
+    result = execute_code(code, tools, on_tool_call=None)
+    assert result.success

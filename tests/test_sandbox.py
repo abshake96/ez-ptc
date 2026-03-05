@@ -47,7 +47,7 @@ class _MockSandbox:
     def __init__(self):
         self.calls = []
 
-    async def execute(self, code, tools, timeout):
+    async def execute(self, code, tools, timeout, on_tool_call=None):
         self.calls.append({"code": code, "tools": tools, "timeout": timeout})
         return ExecutionResult(success=True, output="mock output")
 
@@ -55,7 +55,7 @@ class _MockSandbox:
 class _FailingSandbox:
     """Custom sandbox that always returns an error."""
 
-    async def execute(self, code, tools, timeout):
+    async def execute(self, code, tools, timeout, on_tool_call=None):
         return ExecutionResult(
             success=False, error="sandbox error", error_output="sandbox failed"
         )

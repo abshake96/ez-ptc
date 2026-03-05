@@ -5,7 +5,7 @@ A lightweight, framework-agnostic library for programmatic tool calling with any
 
 from importlib.metadata import version as _version
 
-from .executor import ExecutionResult
+from .executor import ExecutionEvent, ExecutionResult, PendingToolCall, ToolCallRecord
 from .sandbox import LocalSandbox, SandboxBackend
 from .schema import function_to_schema
 from .tool import Tool, ez_tool
@@ -20,6 +20,9 @@ __all__ = [
     "Tool",
     "Toolkit",
     "ExecutionResult",
+    "ExecutionEvent",
+    "ToolCallRecord",
+    "PendingToolCall",
     "function_to_schema",
     "ValidationResult",
     "validate_code",

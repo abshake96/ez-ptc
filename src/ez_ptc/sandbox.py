@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from .executor import ExecutionResult
+    from .executor import ExecutionResult, ToolCallRecord
     from .tool import Tool
 
 
@@ -18,7 +18,11 @@ class SandboxBackend(Protocol):
     """
 
     async def execute(
-        self, code: str, tools: dict[str, Tool], timeout: float
+        self,
+        code: str,
+        tools: dict[str, Tool],
+        timeout: float,
+        on_tool_call: Callable[[ToolCallRecord], None] | None = None,
     ) -> ExecutionResult: ...
 
 
@@ -26,11 +30,15 @@ class LocalSandbox:
     """Default sandbox using the built-in restricted exec() engine."""
 
     async def execute(
-        self, code: str, tools: dict[str, Tool], timeout: float
+        self,
+        code: str,
+        tools: dict[str, Tool],
+        timeout: float,
+        on_tool_call: Callable[[ToolCallRecord], None] | None = None,
     ) -> ExecutionResult:
         from .executor import execute_code
 
         loop = asyncio.get_running_loop()
         return await asyncio.to_thread(
-            execute_code, code, tools, timeout, loop, False
+            execute_code, code, tools, timeout, loop, False, on_tool_call
         )

@@ -8,15 +8,48 @@ import builtins
 import inspect
 import io
 import json
+import queue
 import signal
 import threading
+import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 if TYPE_CHECKING:
     from .tool import Tool
+
+
+@dataclass
+class ToolCallRecord:
+    """Structured record of a single tool invocation."""
+
+    name: str
+    args: tuple
+    kwargs: dict[str, Any]
+    result: Any
+    duration_ms: float
+
+
+@dataclass
+class ExecutionEvent:
+    """Event emitted during streaming execution.
+
+    Attributes:
+        type: One of "output", "tool_call", "error", "done"
+        data: str for output/error, ToolCallRecord for tool_call, ExecutionResult for done
+    """
+
+    type: Literal["output", "tool_call", "error", "done"]
+    data: Any
+
+
+@dataclass
+class PendingToolCall:
+    """A tool call that requires human approval before execution."""
+
+    tool_name: str
 
 
 @dataclass
@@ -30,14 +63,22 @@ class ExecutionResult:
         tool_calls: Log of which tools were called with what args
         success: Whether execution completed without error
         error: Exception message if execution failed
+        pending_tool_calls: Tools requiring approval before execution can proceed
+        is_paused: True when pending_tool_calls is non-empty (derived property)
     """
 
     output: str = ""
     error_output: str = ""
     return_value: Any = None
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[ToolCallRecord] = field(default_factory=list)
     success: bool = True
     error: str | None = None
+    pending_tool_calls: list[PendingToolCall] = field(default_factory=list)
+    attempts: int = 1
+
+    @property
+    def is_paused(self) -> bool:
+        return bool(self.pending_tool_calls)
 
     def to_string(self) -> str:
         """Return a string optimized for token efficiency.
@@ -54,23 +95,42 @@ class ExecutionResult:
         return self.error_output or (self.error or "Unknown error")
 
 
+class _QueueWriter:
+    """A file-like writer that sends each write to a Queue as an event."""
+
+    def __init__(self, event_queue: queue.Queue, event_type: str) -> None:
+        self._queue = event_queue
+        self._event_type = event_type
+        self._buffer = io.StringIO()
+
+    def write(self, s: str) -> int:
+        self._buffer.write(s)
+        if s:
+            self._queue.put(ExecutionEvent(type=self._event_type, data=s))
+        return len(s)
+
+    def flush(self) -> None:
+        pass
+
+    def getvalue(self) -> str:
+        return self._buffer.getvalue()
+
+
 class _TimeoutError(Exception):
     """Raised when code execution exceeds the timeout."""
 
 
 def _make_tool_wrapper(
     tool: Tool,
-    call_log: list[dict[str, Any]],
+    call_log: list[ToolCallRecord],
     loop: asyncio.AbstractEventLoop | None = None,
+    on_tool_call: Callable[[ToolCallRecord], None] | None = None,
+    event_queue: queue.Queue | None = None,
 ) -> Callable[..., Any]:
     """Create a wrapper around a tool function that logs calls."""
 
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        call_record: dict[str, Any] = {
-            "name": tool.name,
-            "args": args,
-            "kwargs": kwargs,
-        }
+        start = time.perf_counter()
 
         result = tool.fn(*args, **kwargs)
 
@@ -94,35 +154,19 @@ def _make_tool_wrapper(
                 else:
                     result = asyncio.run(result)
 
-        call_record["result"] = result
-        call_log.append(call_record)
-        return result
-
-    wrapper.__name__ = tool.name
-    wrapper.__doc__ = tool.description
-    return wrapper
-
-
-def _make_async_tool_wrapper(
-    tool: Tool,
-    call_log: list[dict[str, Any]],
-) -> Callable[..., Any]:
-    """Create an async wrapper around an async tool function that logs calls."""
-
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        call_record: dict[str, Any] = {
-            "name": tool.name,
-            "args": args,
-            "kwargs": kwargs,
-        }
-
-        result = tool.fn(*args, **kwargs)
-
-        if inspect.isawaitable(result):
-            result = await result
-
-        call_record["result"] = result
-        call_log.append(call_record)
+        duration_ms = (time.perf_counter() - start) * 1000
+        record = ToolCallRecord(
+            name=tool.name,
+            args=args,
+            kwargs=kwargs,
+            result=result,
+            duration_ms=duration_ms,
+        )
+        call_log.append(record)
+        if on_tool_call is not None:
+            on_tool_call(record)
+        if event_queue is not None:
+            event_queue.put(ExecutionEvent(type="tool_call", data=record))
         return result
 
     wrapper.__name__ = tool.name
@@ -169,7 +213,7 @@ def _make_parallel_helper() -> Callable[..., list[Any]]:
     return parallel
 
 
-def _enrich_error(e: Exception, stderr_capture: io.StringIO) -> None:
+def _enrich_error(e: Exception, stderr_capture: io.StringIO | _QueueWriter) -> None:
     """Append available keys/attributes to error output for LLM self-correction."""
     tb = e.__traceback__
     if tb is None:
@@ -373,6 +417,8 @@ def execute_code(
     timeout: float = 30.0,
     loop: asyncio.AbstractEventLoop | None = None,
     has_async_tools: bool = False,
+    on_tool_call: Callable[[ToolCallRecord], None] | None = None,
+    event_queue: queue.Queue | None = None,
 ) -> ExecutionResult:
     """Execute LLM-generated Python code with tools injected as globals.
 
@@ -382,13 +428,20 @@ def execute_code(
         timeout: Maximum execution time in seconds
         loop: Optional event loop for efficient async tool dispatch
         has_async_tools: Deprecated — ignored. Kept for backward compatibility.
+        on_tool_call: Optional callback invoked after each tool call with a ToolCallRecord.
+        event_queue: Optional queue for streaming events.
 
     Returns:
         ExecutionResult with captured output, tool calls, and error info
     """
-    call_log: list[dict[str, Any]] = []
-    stdout_capture = io.StringIO()
-    stderr_capture = io.StringIO()
+    call_log: list[ToolCallRecord] = []
+
+    if event_queue is not None:
+        stdout_capture: io.StringIO | _QueueWriter = _QueueWriter(event_queue, "output")
+        stderr_capture: io.StringIO | _QueueWriter = _QueueWriter(event_queue, "error")
+    else:
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
 
     # Build restricted namespace
     namespace: dict[str, Any] = {}
@@ -408,7 +461,7 @@ def execute_code(
     # Add tool wrappers — always sync; _make_tool_wrapper handles async tools
     # transparently via run_coroutine_threadsafe.
     for name, tool in tools.items():
-        namespace[name] = _make_tool_wrapper(tool, call_log, loop=loop)
+        namespace[name] = _make_tool_wrapper(tool, call_log, loop=loop, on_tool_call=on_tool_call, event_queue=event_queue)
 
     # Inject parallel() helper for concurrent tool calls
     namespace["parallel"] = _make_parallel_helper()

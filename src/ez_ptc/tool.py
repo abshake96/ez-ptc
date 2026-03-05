@@ -29,6 +29,7 @@ class Tool:
     signature: str
     return_schema: dict[str, Any] | None = None
     is_async: bool = False
+    requires_approval: bool = False
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.fn(*args, **kwargs)
@@ -41,6 +42,7 @@ def ez_tool(
     fn: Callable | None = None,
     *,
     return_schema: dict[str, Any] | None = None,
+    requires_approval: bool = False,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that wraps a function as a Tool.
 
@@ -56,6 +58,11 @@ def ez_tool(
         def get_weather(location: str) -> dict:
             \"\"\"Get weather for a location.\"\"\"
             return {"temp": 22}
+
+        @ez_tool(requires_approval=True)
+        def delete_file(path: str) -> str:
+            \"\"\"Delete a file (requires human approval).\"\"\"
+            ...
     """
     def _wrap(f: Callable) -> Tool:
         schema = function_to_schema(f)
@@ -69,6 +76,7 @@ def ez_tool(
             signature=schema["signature"],
             return_schema=rs,
             is_async=schema.get("is_async", False),
+            requires_approval=requires_approval,
         )
         functools.update_wrapper(tool, f)
         return tool

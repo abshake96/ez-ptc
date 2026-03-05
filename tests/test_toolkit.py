@@ -681,7 +681,7 @@ class _RecordingSandbox:
     def __init__(self):
         self.calls = []
 
-    async def execute(self, code, tools, timeout):
+    async def execute(self, code, tools, timeout, on_tool_call=None):
         self.calls.append({"code": code, "timeout": timeout})
         return ER(success=True, output="recorded")
 
@@ -1060,3 +1060,223 @@ class TestErrorEnrichment:
         fn = tk.as_tool_sync()
         result = fn('r = get_weather("NYC")\nprint(r["mileage"])')
         assert "Hint" in result or "kmpl" in result or "temp" in result
+
+
+# ── get_tool() tests ─────────────────────────────────────────────────
+
+
+class TestGetTool:
+    def test_get_existing_tool(self):
+        tk = _make_toolkit()
+        tool = tk.get_tool("get_weather")
+        assert tool.name == "get_weather"
+
+    def test_get_missing_tool_raises(self):
+        tk = _make_toolkit()
+        with pytest.raises(KeyError):
+            tk.get_tool("nonexistent")
+
+
+# ── on_tool_call callback tests ──────────────────────────────────────
+
+
+class TestOnToolCallCallback:
+    def test_callback_receives_records(self):
+        from ez_ptc.executor import ToolCallRecord
+
+        received = []
+        tk = Toolkit([get_weather, search_database], on_tool_call=received.append)
+        tk.execute_sync('get_weather("NYC")\nsearch_database("test")')
+        assert len(received) == 2
+        assert all(isinstance(r, ToolCallRecord) for r in received)
+        assert received[0].name == "get_weather"
+        assert received[1].name == "search_database"
+
+    def test_no_callback_works(self):
+        tk = Toolkit([get_weather])
+        result = tk.execute_sync('print(get_weather("NYC"))')
+        assert result.success
+
+
+# ── Toolkit.filter() tests ─────────────────────────────────────────────
+
+
+class TestFilter:
+    """Tests for dynamic tool filtering via Toolkit.filter()."""
+
+    def test_filter_by_names(self):
+        tk = _make_toolkit()
+        filtered = tk.filter(names=["get_weather"])
+        assert len(filtered) == 1
+        assert filtered.tools[0].name == "get_weather"
+
+    def test_filter_by_names_multiple(self):
+        tk = _make_toolkit()
+        filtered = tk.filter(names=["get_weather", "search_database"])
+        assert len(filtered) == 2
+
+    def test_filter_by_predicate(self):
+        tk = _make_async_toolkit()
+        filtered = tk.filter(predicate=lambda t: t.is_async)
+        assert len(filtered) == 1
+        assert filtered.tools[0].name == "async_fetch"
+
+    def test_filter_by_predicate_sync_only(self):
+        tk = _make_async_toolkit()
+        filtered = tk.filter(predicate=lambda t: not t.is_async)
+        assert len(filtered) == 1
+        assert filtered.tools[0].name == "sync_multiply"
+
+    def test_filter_both_names_and_predicate(self):
+        """When both names and predicate are given, both must match (AND)."""
+        tk = _make_async_toolkit()
+        filtered = tk.filter(names=["async_fetch", "sync_multiply"], predicate=lambda t: t.is_async)
+        assert len(filtered) == 1
+        assert filtered.tools[0].name == "async_fetch"
+
+    def test_filter_empty_raises_value_error(self):
+        tk = _make_toolkit()
+        with pytest.raises(ValueError, match="empty"):
+            tk.filter(names=["nonexistent_tool"])
+
+    def test_filter_predicate_matches_none_raises(self):
+        tk = _make_toolkit()
+        with pytest.raises(ValueError, match="empty"):
+            tk.filter(predicate=lambda t: t.is_async)
+
+    def test_filter_no_args_raises(self):
+        tk = _make_toolkit()
+        with pytest.raises(ValueError, match="At least one"):
+            tk.filter()
+
+    def test_filter_inherits_settings(self):
+        tk = _make_toolkit(assist_tool_chaining=True, timeout=99.0, error_hint="Custom hint")
+        filtered = tk.filter(names=["get_weather"])
+        assert filtered._assist_tool_chaining is True
+        assert filtered._timeout == 99.0
+        assert filtered._custom_error_hint == "Custom hint"
+
+    def test_filter_inherits_custom_preamble(self):
+        tk = _make_toolkit(preamble="My preamble", postamble="My postamble")
+        filtered = tk.filter(names=["get_weather"])
+        assert "My preamble" in filtered.prompt()
+        assert "My postamble" in filtered.prompt()
+
+    def test_filter_returns_new_toolkit(self):
+        tk = _make_toolkit()
+        filtered = tk.filter(names=["get_weather"])
+        assert filtered is not tk
+        assert len(tk) == 2
+        assert len(filtered) == 1
+
+    def test_filtered_prompt_only_has_selected_tools(self):
+        tk = _make_toolkit()
+        filtered = tk.filter(names=["get_weather"])
+        prompt = filtered.prompt()
+        assert "get_weather" in prompt
+        assert "search_database" not in prompt
+
+    def test_filtered_tool_schema(self):
+        tk = _make_toolkit()
+        filtered = tk.filter(names=["search_database"])
+        schema = filtered.tool_schema()
+        desc = schema["function"]["description"]
+        assert "search_database" in desc
+        assert "get_weather" not in desc
+
+    def test_filtered_execute(self):
+        tk = _make_toolkit()
+        filtered = tk.filter(names=["get_weather"])
+        result = filtered.execute_sync('w = get_weather("NYC")\nprint(w["condition"])')
+        assert result.success
+        assert "sunny" in result.output
+
+    def test_filtered_execute_missing_tool(self):
+        tk = _make_toolkit()
+        filtered = tk.filter(names=["get_weather"])
+        result = filtered.execute_sync('r = search_database("test")\nprint(r)')
+        assert not result.success
+
+
+# ── Multi-model schema format tests ────────────────────────────────────
+
+
+class TestToolSchemaFormats:
+    """Tests for tool_schema() multi-model format support."""
+
+    def test_openai_format_structure(self):
+        tk = _make_toolkit()
+        schema = tk.tool_schema(format="openai")
+        assert schema["type"] == "function"
+        assert "function" in schema
+        assert schema["function"]["name"] == "execute_tools"
+        assert "parameters" in schema["function"]
+        assert "code" in schema["function"]["parameters"]["properties"]
+        assert schema["function"]["parameters"]["required"] == ["code"]
+
+    def test_anthropic_format_structure(self):
+        tk = _make_toolkit()
+        schema = tk.tool_schema(format="anthropic")
+        assert "type" not in schema
+        assert schema["name"] == "execute_tools"
+        assert "input_schema" in schema
+        assert "code" in schema["input_schema"]["properties"]
+        assert schema["input_schema"]["required"] == ["code"]
+
+    def test_gemini_format_structure(self):
+        tk = _make_toolkit()
+        schema = tk.tool_schema(format="gemini")
+        assert "type" not in schema
+        assert schema["name"] == "execute_tools"
+        assert "description" in schema
+        assert "parameters" in schema
+        assert schema["parameters"]["type"] == "object"
+        assert "code" in schema["parameters"]["properties"]
+        assert schema["parameters"]["required"] == ["code"]
+
+    def test_gemini_has_tool_descriptions(self):
+        tk = _make_toolkit()
+        schema = tk.tool_schema(format="gemini")
+        assert "get_weather" in schema["description"]
+        assert "search_database" in schema["description"]
+
+    def test_raw_format_same_as_gemini(self):
+        tk = _make_toolkit()
+        gemini = tk.tool_schema(format="gemini")
+        raw = tk.tool_schema(format="raw")
+        assert gemini == raw
+
+    def test_mistral_format_same_as_openai(self):
+        tk = _make_toolkit()
+        openai = tk.tool_schema(format="openai")
+        mistral = tk.tool_schema(format="mistral")
+        assert openai == mistral
+
+    def test_gemini_no_function_wrapper(self):
+        tk = _make_toolkit()
+        schema = tk.tool_schema(format="gemini")
+        assert "function" not in schema
+        assert "type" not in schema
+
+    def test_all_formats_have_same_description(self):
+        tk = _make_toolkit()
+        openai_desc = tk.tool_schema(format="openai")["function"]["description"]
+        anthropic_desc = tk.tool_schema(format="anthropic")["description"]
+        gemini_desc = tk.tool_schema(format="gemini")["description"]
+        mistral_desc = tk.tool_schema(format="mistral")["function"]["description"]
+        assert openai_desc == anthropic_desc == gemini_desc == mistral_desc
+
+    def test_gemini_chaining_includes_return_schema(self):
+        tk = _make_typed_toolkit(assist_tool_chaining=True)
+        schema = tk.tool_schema(format="gemini")
+        assert "Returns:" in schema["description"]
+
+    def test_raw_chaining_includes_return_schema(self):
+        tk = _make_typed_toolkit(assist_tool_chaining=True)
+        schema = tk.tool_schema(format="raw")
+        assert "Returns:" in schema["description"]
+
+    def test_mistral_chaining_includes_return_schema(self):
+        tk = _make_typed_toolkit(assist_tool_chaining=True)
+        schema = tk.tool_schema(format="mistral")
+        assert "Returns:" in schema["function"]["description"]
